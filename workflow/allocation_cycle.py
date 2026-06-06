@@ -1,8 +1,9 @@
 ﻿"""Safe dry-run allocation workflow.
 
-The cycle reads upstream bot result snapshots read-only, validates the fixed
-Phase 2 target allocation, builds a Phase 2.5 recommendation-only allocation,
-and writes only this project's local result snapshot.
+Phase 2: reads upstream bot snapshots, validates fixed allocation, builds
+recommendation-only allocation.
+Phase 3: reads MarketRegimeBot regime snapshot and produces regime-based
+allocation output. All operations remain read-only and dry-run.
 """
 
 from __future__ import annotations
@@ -24,7 +25,9 @@ from core.allocation_contracts import (
     BotAllocationTarget,
 )
 from core.health_evaluator import evaluate_all_snapshot_health
+from core.market_regime_adapter import read_market_regime_snapshot
 from core.recommendation_engine import generate_allocation_recommendation
+from core.regime_allocation_engine import build_regime_allocation
 from core.snapshot_reader import read_configured_snapshots
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -82,14 +85,18 @@ def build_dry_run_decision(
 def write_result_snapshot(
     decision: AllocationDecision,
     result_path: Path = RESULT_SNAPSHOT_PATH,
+    regime_allocation_dict: dict[str, Any] | None = None,
 ) -> Path:
     resolved_path = result_path.resolve()
     project_root = PROJECT_ROOT.resolve()
     if project_root not in resolved_path.parents and resolved_path != project_root:
         raise ValueError("Refusing to write outside NovaAllocationBot project root.")
     result_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = decision.to_dict()
+    if regime_allocation_dict is not None:
+        payload["regime_allocation"] = regime_allocation_dict
     result_path.write_text(
-        json.dumps(decision.to_dict(), indent=2, sort_keys=True) + "\n",
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return result_path
@@ -98,15 +105,20 @@ def write_result_snapshot(
 def run_allocation_cycle(
     write_snapshot: bool = True,
     snapshot_paths: dict[str, Path] | None = None,
+    regime_snapshot_path: Path | None = None,
 ) -> dict[str, Any]:
     decision = build_dry_run_decision(snapshot_paths=snapshot_paths)
+    regime_result = read_market_regime_snapshot(regime_snapshot_path)
+    regime_allocation = build_regime_allocation(regime_result)
+    regime_allocation_dict = regime_allocation.to_dict()
     output_path = None
     if write_snapshot:
-        output_path = str(write_result_snapshot(decision))
+        output_path = str(write_result_snapshot(decision, regime_allocation_dict=regime_allocation_dict))
     return {
         "status": decision.status,
         "dry_run": decision.dry_run,
         "health_evaluated": decision.health_evaluated,
         "result_snapshot_path": output_path,
         "decision": decision.to_dict(),
+        "regime_allocation": regime_allocation_dict,
     }

@@ -26,12 +26,22 @@ def main(argv: list[str] | None = None) -> int:
     if not args.once:
         parser.error("Only --once is supported in the skeleton phase.")
     result = run_allocation_cycle(write_snapshot=True)
+    ra = result.get("regime_allocation", {})
     print(
         json.dumps(
             {
                 "status": result["status"],
                 "dry_run": True,
                 "health_evaluated": result["health_evaluated"],
+                "regime_allocation": {
+                    "project": ra.get("project"),
+                    "status": ra.get("status"),
+                    "input_source": ra.get("input_source"),
+                    "market_regime": ra.get("market_regime"),
+                    "confidence": ra.get("confidence"),
+                    "recommended_allocation": ra.get("recommended_allocation"),
+                    "reason": ra.get("reason"),
+                },
             },
             sort_keys=True,
         )
