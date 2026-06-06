@@ -1,0 +1,12 @@
+﻿{
+  "project": "NovaAllocationBot",
+  "active_phase": "PHASE_2_5_RECOMMENDATION_ONLY_COMPLETE",
+  "autonomous_mode": false,
+  "dry_run_only": true,
+  "live_trading_enabled": false,
+  "broker_execution_enabled": false,
+  "money_movement_enabled": false,
+  "writes_to_other_projects_enabled": false,
+  "downstream_export_enabled": false,
+  "status": "PHASE_2_5_COMPLETE_SAFE_DRY_RUN_RECOMMENDATION_ONLY"
+}

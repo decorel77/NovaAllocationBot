@@ -1,0 +1,9 @@
+﻿[
+  {"id": "ALLOC-PHASE-001", "title": "Phase 1: skeleton + contracts", "phase": "PHASE_1", "status": "TODO", "risk": "LOW"},
+  {"id": "ALLOC-PHASE-002", "title": "Phase 2: read NovaBotV2 and Options result snapshots read-only", "phase": "PHASE_2", "status": "TODO", "risk": "LOW"},
+  {"id": "ALLOC-PHASE-003", "title": "Phase 3: market regime input", "phase": "PHASE_3", "status": "TODO", "risk": "MEDIUM"},
+  {"id": "ALLOC-PHASE-004", "title": "Phase 4: allocation recommendation engine", "phase": "PHASE_4", "status": "TODO", "risk": "MEDIUM"},
+  {"id": "ALLOC-PHASE-005", "title": "Phase 5: NovaBridge integration", "phase": "PHASE_5", "status": "TODO", "risk": "MEDIUM"},
+  {"id": "ALLOC-PHASE-006", "title": "Phase 6: human approval workflow", "phase": "PHASE_6", "status": "TODO", "risk": "MEDIUM"},
+  {"id": "ALLOC-PHASE-007", "title": "Phase 7: controlled downstream allocation export", "phase": "PHASE_7", "status": "TODO", "risk": "HIGH"}
+]
