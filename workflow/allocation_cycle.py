@@ -24,6 +24,7 @@ from core.allocation_contracts import (
     AllocationRiskState,
     BotAllocationTarget,
 )
+from core.allocation_compliance import build_allocation_compliance
 from core.allocation_history import append_allocation_history
 from core.health_evaluator import evaluate_all_snapshot_health
 from core.market_regime_adapter import read_market_regime_snapshot
@@ -87,6 +88,7 @@ def write_result_snapshot(
     decision: AllocationDecision,
     result_path: Path = RESULT_SNAPSHOT_PATH,
     regime_allocation_dict: dict[str, Any] | None = None,
+    compliance_dict: dict[str, Any] | None = None,
 ) -> Path:
     resolved_path = result_path.resolve()
     project_root = PROJECT_ROOT.resolve()
@@ -96,6 +98,8 @@ def write_result_snapshot(
     payload = decision.to_dict()
     if regime_allocation_dict is not None:
         payload["regime_allocation"] = regime_allocation_dict
+    if compliance_dict is not None:
+        payload["allocation_compliance"] = compliance_dict
     result_path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -108,14 +112,24 @@ def run_allocation_cycle(
     snapshot_paths: dict[str, Path] | None = None,
     regime_snapshot_path: Path | None = None,
     history_path: Path | None = None,
+    current_values: dict[str, float | None] | None = None,
 ) -> dict[str, Any]:
     decision = build_dry_run_decision(snapshot_paths=snapshot_paths)
     regime_result = read_market_regime_snapshot(regime_snapshot_path)
     regime_allocation = build_regime_allocation(regime_result)
     regime_allocation_dict = regime_allocation.to_dict()
+    compliance = build_allocation_compliance(
+        target_allocation=dict(regime_allocation.recommended_allocation),
+        current_values=current_values,
+    )
+    compliance_dict = compliance.to_dict()
     output_path = None
     if write_snapshot:
-        output_path = str(write_result_snapshot(decision, regime_allocation_dict=regime_allocation_dict))
+        output_path = str(write_result_snapshot(
+            decision,
+            regime_allocation_dict=regime_allocation_dict,
+            compliance_dict=compliance_dict,
+        ))
         append_allocation_history(
             regime=regime_allocation.market_regime,
             confidence=regime_allocation.confidence,
@@ -131,4 +145,5 @@ def run_allocation_cycle(
         "result_snapshot_path": output_path,
         "decision": decision.to_dict(),
         "regime_allocation": regime_allocation_dict,
+        "allocation_compliance": compliance_dict,
     }
