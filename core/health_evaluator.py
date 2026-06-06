@@ -12,6 +12,7 @@ GOOD_STATUS_VALUES = {
     "ready",
     "ok",
     "healthy",
+    "dry_run_complete",
     "safe_dry_run_decision",
     "ready_for_phase_3",
     "ready_for_phase_5",

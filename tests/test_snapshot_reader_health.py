@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config.allocation_config import FUTURE_SNAPSHOT_PATHS
 from core.health_evaluator import evaluate_snapshot_health
 from core.snapshot_reader import read_bot_snapshot
 
@@ -107,6 +108,48 @@ class SnapshotReaderAndHealthTests(unittest.TestCase):
             )
 
         self.assertIn("NovaBotV2Options status unknown", summary.warnings)
+
+    def test_options_snapshot_shape_reads_updated_at_utc(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result_snapshot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "project": "NovaBotV2Options",
+                        "status": "DRY_RUN_COMPLETE",
+                        "dry_run": True,
+                        "updated_at_utc": "2026-06-06T10:00:00+00:00",
+                        "broker_execution_enabled": False,
+                        "order_placement_enabled": False,
+                        "money_movement_enabled": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = read_bot_snapshot("NovaBotV2Options", path)
+            summary = evaluate_snapshot_health(
+                result,
+                now=datetime(2026, 6, 6, 12, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(result.snapshot.updated_at, "2026-06-06T10:00:00+00:00")
+        self.assertEqual(result.snapshot.status, "DRY_RUN_COMPLETE")
+        self.assertEqual(summary.health_status, "HEALTHY")
+        self.assertNotIn("NovaBotV2Options update timestamp missing", summary.warnings)
+
+    def test_missing_market_regime_future_snapshot_is_warning_only(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = Path(tmpdir) / "missing_market_regime.json"
+            result = read_bot_snapshot("MarketRegimeBot", missing_path)
+            summary = evaluate_snapshot_health(
+                result,
+                now=datetime(2026, 6, 6, 12, tzinfo=timezone.utc),
+            )
+
+        self.assertIn("MarketRegimeBot", FUTURE_SNAPSHOT_PATHS)
+        self.assertFalse(result.exists)
+        self.assertEqual(summary.health_status, "UNKNOWN")
+        self.assertEqual(summary.warnings, ("MarketRegimeBot snapshot missing",))
 
 
 if __name__ == "__main__":

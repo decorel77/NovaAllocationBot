@@ -75,6 +75,19 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(recommendation.current_allocation["NovaBotV2"], 90)
         self.assertEqual(recommendation.current_allocation["NovaBotV2Options"], 10)
 
+    def test_recommendation_ignores_future_market_regime_input(self):
+        recommendation = generate_allocation_recommendation(
+            {
+                "NovaBotV2": {"score": 100, "status": "HEALTHY"},
+                "NovaBotV2Options": {"score": 95, "status": "HEALTHY"},
+                "MarketRegimeBot": {"score": 0, "status": "UNKNOWN"},
+            },
+            warnings=("MarketRegimeBot snapshot missing",),
+        )
+        self.assertEqual(recommendation.recommended_allocation["NovaBotV2"], 90)
+        self.assertEqual(recommendation.recommended_allocation["NovaBotV2Options"], 10)
+        self.assertEqual(sum(recommendation.recommended_allocation.values()), 100)
+
 
 if __name__ == "__main__":
     unittest.main()

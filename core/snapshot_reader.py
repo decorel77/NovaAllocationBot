@@ -139,6 +139,7 @@ def _extract_updated_at(payload: dict[str, Any]) -> str | None:
     for key in (
         "completed_at",
         "updated_at",
+        "updated_at_utc",
         "generated_at_utc",
         "generated_at",
         "worker_entrypoint_timestamp",

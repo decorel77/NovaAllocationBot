@@ -30,4 +30,12 @@ DEFAULT_SNAPSHOT_PATHS = {
     / "result_snapshot.json",
 }
 
+FUTURE_SNAPSHOT_PATHS = {
+    "MarketRegimeBot": APPS_ROOT
+    / "MarketRegimeBot"
+    / "data"
+    / "system"
+    / "result_snapshot.json",
+}
+
 SNAPSHOT_STALE_AFTER_HOURS = 48
