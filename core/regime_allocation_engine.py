@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from config.allocation_config import ALLOCATION_CONTRACT_VERSION
 from core.market_regime_adapter import RegimeReadResult
 
 REGIME_ALLOCATIONS: dict[str, dict[str, int]] = {
@@ -38,6 +39,7 @@ class RegimeAllocationResult:
     allocation_export_enabled: bool = False
     writes_to_other_projects_enabled: bool = False
     warnings: tuple[str, ...] = ()
+    allocation_version: str = ALLOCATION_CONTRACT_VERSION
 
     def validate(self) -> None:
         assert self.dry_run, "Must remain dry-run"
@@ -68,6 +70,7 @@ class RegimeAllocationResult:
             "allocation_export_enabled": self.allocation_export_enabled,
             "writes_to_other_projects_enabled": self.writes_to_other_projects_enabled,
             "warnings": list(self.warnings),
+            "allocation_version": self.allocation_version,
         }
 
 
