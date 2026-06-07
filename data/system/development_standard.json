@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "informational_only": true,
+  "runtime_effect": false,
+  "task_status_allowed_values": [
+    "TODO",
+    "IN_PROGRESS",
+    "SPLIT",
+    "BLOCKED",
+    "DONE",
+    "FUTURE",
+    "ARCHIVED"
+  ],
+  "task_id_prefix": "TASK-",
+  "sequential_autocycle_enabled": true,
+  "max_tasks_per_cycle": 3,
+  "cherry_picking_allowed": false,
+  "split_large_tasks_required": true,
+  "human_commit_approval_required": true,
+  "human_push_approval_required": true,
+  "savegame_update_required": true,
+  "guardrails_validation_required": true,
+  "task_queue_validation_required": true,
+  "full_test_suite_required": true,
+  "dependency_tracking_required": true,
+  "blocked_task_documentation_required": true,
+  "authority_documents": [
+    "docs/architecture/nova_development_standard.md",
+    "docs/architecture/guardrails.md",
+    "data/system/guardrails.json"
+  ],
+  "standard_deliverable_fields": [
+    "selected_task",
+    "completion_status",
+    "files_changed",
+    "tests_and_checks",
+    "validator_output",
+    "git_status",
+    "safety_review",
+    "recommended_commit_message"
+  ],
+  "notes": [
+    "NOVA development standard is informational and inert.",
+    "This template may be copied and adapted to other non-live NOVA apps.",
+    "Sequential cycles must not cherry-pick easier later tasks."
+  ]
+}
