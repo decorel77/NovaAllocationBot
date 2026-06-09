@@ -1,4 +1,4 @@
-[
+﻿[
   {
     "id": "ALLOC-PHASE-001",
     "title": "Phase 1: skeleton + contracts",
@@ -37,7 +37,7 @@
     "priority": "P1",
     "risk": "MEDIUM",
     "task_type": "data_reading",
-    "summary": "Connect MarketRegimeBot result_snapshot.json as input to allocation decisions. Regime-aware allocation adjustments — advisory only, no execution.",
+    "summary": "Connect MarketRegimeBot result_snapshot.json as input to allocation decisions. Regime-aware allocation adjustments â€” advisory only, no execution.",
     "dependencies": ["ALLOC-PHASE-002"],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
@@ -97,7 +97,7 @@
     "priority": "P3",
     "risk": "HIGH",
     "task_type": "integration",
-    "summary": "FUTURE ONLY — design-only task for eventually exporting allocation recommendations to NovaBotV2. Requires explicit human approval gate. No implementation until Phase 6 complete and human-approved.",
+    "summary": "FUTURE ONLY â€” design-only task for eventually exporting allocation recommendations to NovaBotV2. Requires explicit human approval gate. No implementation until Phase 6 complete and human-approved.",
     "dependencies": ["ALLOC-PHASE-006"],
     "allowed_under_current_architecture": false,
     "runtime_effect": true,
@@ -108,7 +108,7 @@
     "id": "ALLOC-ANALYTICS-001",
     "title": "Allocation recommendation history tracker",
     "phase": "ANALYTICS",
-    "status": "TODO",
+    "status": "DONE",
     "priority": "P1",
     "risk": "LOW",
     "task_type": "analytics",
@@ -157,7 +157,7 @@
     "priority": "P2",
     "risk": "LOW",
     "task_type": "analytics",
-    "summary": "Detect when actual portfolio composition drifts from recommended allocation. Report drift warnings in result_snapshot.json and dashboard. Read-only — no execution.",
+    "summary": "Detect when actual portfolio composition drifts from recommended allocation. Report drift warnings in result_snapshot.json and dashboard. Read-only â€” no execution.",
     "dependencies": ["ALLOC-ANALYTICS-001"],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
@@ -172,7 +172,7 @@
     "priority": "P1",
     "risk": "LOW",
     "task_type": "audit",
-    "summary": "Review all dry-run guards, ADVISORY_ONLY flags, and execution prevention mechanisms. Produce audit report. No code changes — documentation only.",
+    "summary": "Review all dry-run guards, ADVISORY_ONLY flags, and execution prevention mechanisms. Produce audit report. No code changes â€” documentation only.",
     "dependencies": ["ALLOC-PHASE-004"],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
@@ -180,3 +180,4 @@
     "live_trading_readiness": "blocked"
   }
 ]
+
