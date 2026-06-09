@@ -34,3 +34,23 @@ Safety lock:
 - Downstream allocation export is disabled.
 - NovaBridge orchestration is not implemented in this phase.
 - Phase 3, 4, 5, 6, and 7 are not implemented.
+
+---
+
+## Guardrails Authority (added 2026-06-07)
+
+Central guardrails authority standard applied to NovaAllocationBot.
+
+| Artifact | Path |
+|---|---|
+| Guardrails document | `docs/architecture/guardrails.md` |
+| Guardrails policy | `data/system/guardrails.json` |
+| Guardrails validator | `utils/guardrails_validator.py` |
+| Guardrails tests | `tests/test_guardrails.py` |
+
+All guardrails fields confirmed: `runtime_effect=false`, `broker_access_allowed=false`,
+`order_execution_allowed=false`, `automatic_money_movement_allowed=false`,
+`commit_requires_human_approval=true`, `push_requires_human_approval=true`.
+
+Future prompts may reference `docs/architecture/guardrails.md` and
+`data/system/guardrails.json` as the safety authority for this repo.

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "informational_only": true,
+  "runtime_effect": false,
+  "broker_access_allowed": false,
+  "order_execution_allowed": false,
+  "trading_logic_modification_allowed": false,
+  "scheduler_modification_allowed": false,
+  "telegram_execution_allowed": false,
+  "tws_ibkr_modification_allowed": false,
+  "credential_access_allowed": false,
+  "env_file_access_allowed": false,
+  "automatic_money_movement_allowed": false,
+  "runtime_persistence_allowed": true,
+  "report_generation_allowed": true,
+  "schema_creation_allowed": true,
+  "validator_creation_allowed": true,
+  "test_creation_allowed": true,
+  "commit_requires_human_approval": true,
+  "push_requires_human_approval": true,
+  "allowed_work": [
+    "runtime status JSON",
+    "autocycle status JSON",
+    "cycle history JSON",
+    "reports",
+    "schemas",
+    "validators",
+    "tests",
+    "documentation",
+    "read-only analytics"
+  ],
+  "forbidden_work": [
+    "broker imports",
+    "IBKR/TWS imports",
+    "order placement",
+    "live trading",
+    "trading decision logic",
+    "scheduler activation",
+    "Telegram execution",
+    "credentials",
+    ".env",
+    "automatic money movement"
+  ],
+  "authority_document": "docs/architecture/guardrails.md",
+  "notes": [
+    "Central guardrails authority is informational and inert.",
+    "Future prompts may reference this file and docs/architecture/guardrails.md instead of repeating all safety rules.",
+    "NovaAllocationBot allocation recommendations are advisory only. Downstream export and execution require separate human-reviewed implementation tasks."
+  ]
+}
