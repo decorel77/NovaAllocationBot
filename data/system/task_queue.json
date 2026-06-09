@@ -1,4 +1,4 @@
-﻿[
+[
   {
     "id": "ALLOC-PHASE-001",
     "title": "Phase 1: skeleton + contracts",
@@ -23,7 +23,9 @@
     "risk": "LOW",
     "task_type": "data_reading",
     "summary": "Implement read-only adapters for NovaBotV2 and NovaBotV2Options result_snapshot.json files. No monetary data surfaced externally.",
-    "dependencies": ["ALLOC-PHASE-001"],
+    "dependencies": [
+      "ALLOC-PHASE-001"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -38,7 +40,9 @@
     "risk": "MEDIUM",
     "task_type": "data_reading",
     "summary": "Connect MarketRegimeBot result_snapshot.json as input to allocation decisions. Regime-aware allocation adjustments â€” advisory only, no execution.",
-    "dependencies": ["ALLOC-PHASE-002"],
+    "dependencies": [
+      "ALLOC-PHASE-002"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -53,7 +57,9 @@
     "risk": "MEDIUM",
     "task_type": "analytics",
     "summary": "Fixed 90/10/0/0 advisory allocation split (NovaBotV2/Options/CryptoBot/Reserve). Read-only recommendation. No execution, no money movement.",
-    "dependencies": ["ALLOC-PHASE-002"],
+    "dependencies": [
+      "ALLOC-PHASE-002"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -68,7 +74,9 @@
     "risk": "MEDIUM",
     "task_type": "integration",
     "summary": "Produce result_snapshot.json consumable by NovaBridge adapter. Surface allocation percentages, status, and dry-run state only.",
-    "dependencies": ["ALLOC-PHASE-004"],
+    "dependencies": [
+      "ALLOC-PHASE-004"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -83,7 +91,9 @@
     "risk": "MEDIUM",
     "task_type": "audit",
     "summary": "Design human approval gate for any allocation recommendation change. Document review criteria and sign-off procedure. No execution path.",
-    "dependencies": ["ALLOC-PHASE-004"],
+    "dependencies": [
+      "ALLOC-PHASE-004"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -98,7 +108,9 @@
     "risk": "HIGH",
     "task_type": "integration",
     "summary": "FUTURE ONLY â€” design-only task for eventually exporting allocation recommendations to NovaBotV2. Requires explicit human approval gate. No implementation until Phase 6 complete and human-approved.",
-    "dependencies": ["ALLOC-PHASE-006"],
+    "dependencies": [
+      "ALLOC-PHASE-006"
+    ],
     "allowed_under_current_architecture": false,
     "runtime_effect": true,
     "broker_execution": false,
@@ -113,7 +125,9 @@
     "risk": "LOW",
     "task_type": "analytics",
     "summary": "Create a time-series log of allocation recommendations. Record timestamp, recommended splits, regime context, and any warnings. Writes to data/reports/allocation_history.json. Read-only analytics.",
-    "dependencies": ["ALLOC-PHASE-004"],
+    "dependencies": [
+      "ALLOC-PHASE-004"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -123,12 +137,15 @@
     "id": "ALLOC-ANALYTICS-002",
     "title": "Regime-based allocation evaluation engine",
     "phase": "ANALYTICS",
-    "status": "TODO",
+    "status": "DONE",
     "priority": "P1",
     "risk": "LOW",
     "task_type": "analytics",
     "summary": "Evaluate allocation split quality under different market regimes. Compare 90/10 split performance in BULL vs BEAR vs NEUTRAL regimes using MarketRegimeBot data. Advisory report only.",
-    "dependencies": ["ALLOC-PHASE-003", "ALLOC-ANALYTICS-001"],
+    "dependencies": [
+      "ALLOC-PHASE-003",
+      "ALLOC-ANALYTICS-001"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -143,7 +160,9 @@
     "risk": "LOW",
     "task_type": "integration",
     "summary": "Read TacticBot strategy-regime recommendations as an input signal for allocation adjustments. TacticBot must be at Phase 12+ before this is actionable. Advisory only, no execution.",
-    "dependencies": ["ALLOC-ANALYTICS-002"],
+    "dependencies": [
+      "ALLOC-ANALYTICS-002"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -158,7 +177,9 @@
     "risk": "LOW",
     "task_type": "analytics",
     "summary": "Detect when actual portfolio composition drifts from recommended allocation. Report drift warnings in result_snapshot.json and dashboard. Read-only â€” no execution.",
-    "dependencies": ["ALLOC-ANALYTICS-001"],
+    "dependencies": [
+      "ALLOC-ANALYTICS-001"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
@@ -173,11 +194,12 @@
     "risk": "LOW",
     "task_type": "audit",
     "summary": "Review all dry-run guards, ADVISORY_ONLY flags, and execution prevention mechanisms. Produce audit report. No code changes â€” documentation only.",
-    "dependencies": ["ALLOC-PHASE-004"],
+    "dependencies": [
+      "ALLOC-PHASE-004"
+    ],
     "allowed_under_current_architecture": true,
     "runtime_effect": false,
     "broker_execution": false,
     "live_trading_readiness": "blocked"
   }
 ]
-

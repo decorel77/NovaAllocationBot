@@ -1,5 +1,15 @@
 ﻿# NovaAllocationBot Savegame
 
+## 2026-06-09 — Regime-Based Allocation Evaluation (MASTER-028)
+
+Task completed:
+- ALLOC-ANALYTICS-002 (MASTER-028): `core/allocation_regime_analysis.py` — groups allocation_history.json entries by market regime, computes avg equity/cash split per regime, counts warnings, writes `data/reports/allocation_regime_analysis.md`.
+- Tests: `tests/test_allocation_regime_analysis.py` — 6 tests passing.
+
+Total tests: 117 passing.
+
+---
+
 ## 2026-06-07 — Guardrails Authority Standard Applied
 
 Added central guardrails authority standard (adapted from NovaBotV2Options).

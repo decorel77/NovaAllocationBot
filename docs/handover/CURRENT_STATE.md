@@ -1,5 +1,12 @@
 ﻿# Current State
 
+## NovaAllocationBot Phase 2.5 + Analytics Phase — 2026-06-09
+
+**ALLOC-ANALYTICS-002 (MASTER-028) DONE:**
+- `core/allocation_regime_analysis.py` — regime-based evaluation of allocation recommendations. Groups history by BULL/BEAR/NEUTRAL, computes avg splits per regime, outputs `data/reports/allocation_regime_analysis.md`.
+
+---
+
 ## NovaAllocationBot Phase 2.5 - 2026-06-06
 
 Status: PHASE_2_5_COMPLETE / SAFE_DRY_RUN / RECOMMENDATION_ONLY
