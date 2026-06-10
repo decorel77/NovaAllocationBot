@@ -26,6 +26,7 @@ from core.allocation_contracts import (
 )
 from core.allocation_compliance import build_allocation_compliance
 from core.allocation_history import append_allocation_history
+from core.authoritative_allocation import build_authoritative_allocation
 from core.health_evaluator import evaluate_all_snapshot_health
 from core.market_regime_adapter import read_market_regime_snapshot
 from core.recommendation_engine import generate_allocation_recommendation
@@ -89,6 +90,7 @@ def write_result_snapshot(
     result_path: Path = RESULT_SNAPSHOT_PATH,
     regime_allocation_dict: dict[str, Any] | None = None,
     compliance_dict: dict[str, Any] | None = None,
+    authoritative_allocation_dict: dict[str, Any] | None = None,
 ) -> Path:
     resolved_path = result_path.resolve()
     project_root = PROJECT_ROOT.resolve()
@@ -100,6 +102,10 @@ def write_result_snapshot(
         payload["regime_allocation"] = regime_allocation_dict
     if compliance_dict is not None:
         payload["allocation_compliance"] = compliance_dict
+    if authoritative_allocation_dict is not None:
+        # REPAIR-007: the single authoritative allocation. plan / recommendation /
+        # regime_allocation remain only as labelled diagnostic inputs.
+        payload["authoritative_allocation"] = authoritative_allocation_dict
     result_path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -118,8 +124,19 @@ def run_allocation_cycle(
     regime_result = read_market_regime_snapshot(regime_snapshot_path)
     regime_allocation = build_regime_allocation(regime_result)
     regime_allocation_dict = regime_allocation.to_dict()
+
+    # REPAIR-007: collapse plan / recommendation / regime into one authoritative
+    # allocation. The regime only steers the decision when verified real.
+    authoritative = build_authoritative_allocation(
+        recommendation=decision.recommendation,
+        regime_result=regime_result,
+        regime_allocation=dict(regime_allocation.recommended_allocation),
+    )
+
+    # Compliance is measured against the authoritative allocation, not a separate
+    # regime block, so the snapshot is internally consistent.
     compliance = build_allocation_compliance(
-        target_allocation=dict(regime_allocation.recommended_allocation),
+        target_allocation=dict(authoritative["allocation"]),
         current_values=current_values,
     )
     compliance_dict = compliance.to_dict()
@@ -129,13 +146,14 @@ def run_allocation_cycle(
             decision,
             regime_allocation_dict=regime_allocation_dict,
             compliance_dict=compliance_dict,
+            authoritative_allocation_dict=authoritative,
         ))
         append_allocation_history(
-            regime=regime_allocation.market_regime,
-            confidence=regime_allocation.confidence,
-            allocation=dict(regime_allocation.recommended_allocation),
-            input_source=regime_allocation.input_source,
-            reason=regime_allocation.reason,
+            regime=regime_result.market_regime,
+            confidence=regime_result.confidence,
+            allocation=dict(authoritative["allocation"]),
+            input_source=authoritative["source"],
+            reason=authoritative["reason"],
             history_path=history_path,
         )
     return {
@@ -146,4 +164,5 @@ def run_allocation_cycle(
         "decision": decision.to_dict(),
         "regime_allocation": regime_allocation_dict,
         "allocation_compliance": compliance_dict,
+        "authoritative_allocation": authoritative,
     }

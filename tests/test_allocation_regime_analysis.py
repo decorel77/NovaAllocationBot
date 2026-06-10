@@ -5,24 +5,37 @@ from pathlib import Path
 from core.allocation_regime_analysis import analyse, generate, load_history, render_report
 
 
+# REPAIR-007: the real allocation_history.json schema written by
+# core.allocation_history.append_allocation_history — top-level ``regime`` and an
+# ``allocation`` dict {NovaBotV2, NovaBotV2Options, Cash}. (The old test fixture
+# used a fictional recommended_splits/regime_context shape that never matched.)
 SAMPLE_ENTRIES = [
     {
         "timestamp": "2026-06-01T10:00:00+00:00",
-        "recommended_splits": {"NovaBotV2": 90.0, "cash": 10.0},
-        "regime_context": {"regime": "BULL", "confidence": 0.8, "input_source": "test"},
-        "warnings": [],
+        "regime": "BULL",
+        "confidence": 80,
+        "allocation": {"NovaBotV2": 90, "NovaBotV2Options": 10, "Cash": 0},
+        "input_source": "regime_aware",
+        "reason": "Regime-aware allocation for verified-real regime 'BULL'",
+        "allocation_version": "1.0",
     },
     {
         "timestamp": "2026-06-02T10:00:00+00:00",
-        "recommended_splits": {"NovaBotV2": 50.0, "cash": 50.0},
-        "regime_context": {"regime": "BEAR", "confidence": 0.7, "input_source": "test"},
-        "warnings": ["low confidence"],
+        "regime": "BEAR",
+        "confidence": 70,
+        "allocation": {"NovaBotV2": 50, "NovaBotV2Options": 0, "Cash": 50},
+        "input_source": "regime_aware",
+        "reason": "Regime-aware allocation for verified-real regime 'BEAR'",
+        "allocation_version": "1.0",
     },
     {
         "timestamp": "2026-06-03T10:00:00+00:00",
-        "recommended_splits": {"NovaBotV2": 80.0, "cash": 20.0},
-        "regime_context": {"regime": "BULL", "confidence": 0.9, "input_source": "test"},
-        "warnings": [],
+        "regime": "BULL",
+        "confidence": 90,
+        "allocation": {"NovaBotV2": 80, "NovaBotV2Options": 10, "Cash": 10},
+        "input_source": "regime_aware",
+        "reason": "Regime-aware allocation for verified-real regime 'BULL'",
+        "allocation_version": "1.0",
     },
 ]
 

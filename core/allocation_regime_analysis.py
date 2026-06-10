@@ -4,21 +4,24 @@ Regime-based allocation evaluation for NovaAllocationBot.
 Groups allocation_history.json entries by regime and computes per-regime
 recommendation quality. Writes output to data/reports/allocation_regime_analysis.md.
 
-Input:  data/reports/allocation_history.json  (from AllocationHistoryTracker)
+Input:  data/system/allocation_history.json  (canonical AllocationHistoryTracker
+        location — REPAIR-007 fixed an earlier data/reports vs data/system mismatch)
 Output: data/reports/allocation_regime_analysis.md
 
 ADVISORY_ONLY. Read-only input. No broker. Writes to data/reports/ only.
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 import json
 
+from config.allocation_config import ALLOCATION_HISTORY_PATH
+
 _DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[1] / "data" / "reports"
-_HISTORY_FILE = _DEFAULT_REPORTS_DIR / "allocation_history.json"
+# REPAIR-007: read from the canonical history location the tracker actually writes.
+_HISTORY_FILE = ALLOCATION_HISTORY_PATH
 _OUTPUT_FILE = _DEFAULT_REPORTS_DIR / "allocation_regime_analysis.md"
 
 
@@ -34,15 +37,17 @@ class RegimeAllocationStats:
     def finalize(self) -> None:
         if not self.entries:
             return
+        # REPAIR-007: read the real history schema — each entry has an
+        # ``allocation`` dict {NovaBotV2, NovaBotV2Options, Cash}.
         equity_vals = [
-            e["recommended_splits"].get("NovaBotV2", 0.0)
+            e["allocation"].get("NovaBotV2", 0.0)
             for e in self.entries
-            if isinstance(e.get("recommended_splits"), dict)
+            if isinstance(e.get("allocation"), dict)
         ]
         cash_vals = [
-            e["recommended_splits"].get("cash", 0.0)
+            e["allocation"].get("Cash", 0.0)
             for e in self.entries
-            if isinstance(e.get("recommended_splits"), dict)
+            if isinstance(e.get("allocation"), dict)
         ]
         if equity_vals:
             self.avg_equity_pct = sum(equity_vals) / len(equity_vals)
@@ -65,8 +70,8 @@ def analyse(entries: list[dict[str, Any]]) -> list[RegimeAllocationStats]:
     buckets: dict[str, RegimeAllocationStats] = {}
 
     for e in entries:
-        ctx = e.get("regime_context") or {}
-        regime = str(ctx.get("regime") or e.get("regime") or "UNKNOWN")
+        # REPAIR-007: the real history schema carries ``regime`` at top level.
+        regime = str(e.get("regime") or "UNKNOWN")
         if regime not in buckets:
             buckets[regime] = RegimeAllocationStats(regime=regime)
         s = buckets[regime]
@@ -103,7 +108,8 @@ def render_report(stats: list[RegimeAllocationStats], total: int) -> str:
         "## Notes",
         "",
         "- All recommendations are advisory only (no broker execution)",
-        "- Source: data/reports/allocation_history.json",
+        "- Avg Equity % = average NovaBotV2 weight; Avg Cash % = average Cash weight",
+        "- Source: data/system/allocation_history.json",
     ]
     return "\n".join(lines) + "\n"
 

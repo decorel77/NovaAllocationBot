@@ -27,6 +27,16 @@ class RegimeReadResult:
     is_fallback: bool
     raw_data: dict[str, Any] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+    # REPAIR-007: realness of the upstream regime (REPAIR-005 canonical contract).
+    # True only when MarketRegimeBot stamped data_is_real=true (live market data).
+    # Fixture/unverified/stale regimes leave this False so the allocator refuses
+    # to treat the regime as authoritative.
+    data_is_real: bool = False
+
+    @property
+    def regime_is_real(self) -> bool:
+        """Usable as an authoritative regime: real data and a known regime."""
+        return self.data_is_real and not self.is_fallback
 
 
 def read_market_regime_snapshot(
@@ -68,13 +78,31 @@ def read_market_regime_snapshot(
     confidence_raw = payload.get("confidence")
     confidence = int(confidence_raw) if isinstance(confidence_raw, (int, float)) else 0
 
+    # REPAIR-007: only a snapshot stamped data_is_real=true (REPAIR-005 contract)
+    # may be treated as a verified-real regime. A fixture/unverified regime is
+    # still surfaced for diagnostics but carries a warning and data_is_real=False
+    # so the authoritative allocator refuses to let it steer the allocation.
+    data_is_real = payload.get("data_is_real") is True
+    source_raw = payload.get("input_source")
+    upstream_source = (
+        source_raw.strip() if isinstance(source_raw, str) and source_raw.strip() else "unknown"
+    )
+
+    warnings: tuple[str, ...] = ()
+    reason = f"Regime '{regime}' read from MarketRegimeBot snapshot (confidence {confidence})"
+    if not data_is_real:
+        warnings = ("regime_unverified",)
+        reason += f" — UNVERIFIED (data_is_real != true, input_source={upstream_source!r})"
+
     return RegimeReadResult(
         market_regime=regime,
         confidence=confidence,
         input_source="MarketRegimeBot",
-        reason=f"Regime '{regime}' read from MarketRegimeBot snapshot (confidence {confidence})",
+        reason=reason,
         is_fallback=False,
         raw_data=dict(payload),
+        warnings=warnings,
+        data_is_real=data_is_real,
     )
 
 

@@ -172,22 +172,38 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
         self.assertIn("allocation_compliance", result)
         self.assertIn("global_status", result["allocation_compliance"])
 
-    def test_cycle_with_synthetic_values_shows_compliant(self):
-        # Inject exact-match values → COMPLIANT
-        current = {"NovaBotV2": 900.0, "NovaBotV2Options": 100.0, "Cash": None}
-        result = allocation_cycle.run_allocation_cycle(
-            write_snapshot=False,
-            current_values=current,
+    def _verified_bull_regime(self, d: Path) -> Path:
+        # REPAIR-007: compliance is measured against the AUTHORITATIVE allocation.
+        # Pin a verified-real BULL regime so the target is a deterministic 90/10/0
+        # rather than the ambient live MarketRegimeBot snapshot.
+        p = Path(d) / "regime.json"
+        p.write_text(
+            json.dumps({"market_regime": "BULL", "confidence": 80,
+                        "data_is_real": True, "input_source": "yfinance"}),
+            encoding="utf-8",
         )
+        return p
+
+    def test_cycle_with_synthetic_values_shows_compliant(self):
+        # Inject exact-match values (90/10/0) against the verified BULL target → COMPLIANT
+        current = {"NovaBotV2": 900.0, "NovaBotV2Options": 100.0, "Cash": None}
+        with tempfile.TemporaryDirectory() as d:
+            result = allocation_cycle.run_allocation_cycle(
+                write_snapshot=False,
+                current_values=current,
+                regime_snapshot_path=self._verified_bull_regime(d),
+            )
         ac = result["allocation_compliance"]
         self.assertEqual(ac["global_status"], GLOBAL_COMPLIANT)
 
     def test_cycle_with_drift_shows_drift_warning(self):
         current = {"NovaBotV2": 970.0, "NovaBotV2Options": 30.0, "Cash": None}
-        result = allocation_cycle.run_allocation_cycle(
-            write_snapshot=False,
-            current_values=current,
-        )
+        with tempfile.TemporaryDirectory() as d:
+            result = allocation_cycle.run_allocation_cycle(
+                write_snapshot=False,
+                current_values=current,
+                regime_snapshot_path=self._verified_bull_regime(d),
+            )
         ac = result["allocation_compliance"]
         self.assertEqual(ac["global_status"], GLOBAL_DRIFT)
 
