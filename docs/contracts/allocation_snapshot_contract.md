@@ -1,6 +1,6 @@
 # NovaAllocationBot — Allocation Snapshot Contract
 
-**Contract version:** 1.0  
+**Contract version:** 2.0
 **Effective from:** Phase 4  
 **Status:** Active
 
@@ -18,6 +18,22 @@ validate against this contract before using the values.
 ---
 
 ## Required fields
+
+### Top-level canonical envelope
+
+| Field | Type | Description |
+|---|---|---|
+| `producer_id` | string | Must be `"NovaAllocationBot"`. |
+| `schema_version` | string | Must be `"allocation_result.v2"`. |
+| `produced_at` | string | UTC ISO-8601 timestamp for snapshot production. |
+| `fresh_until` | string | UTC ISO-8601 timestamp after `produced_at`; default horizon is 24 hours. |
+| `data_is_real` | bool | `true` only when all consumed inputs are real and fresh enough. |
+| `data_is_real_reasons` | array of string | Empty when `data_is_real=true`; otherwise explains why the envelope is not real. |
+| `input_warnings` | array of string | Preserves diagnostics from consumed bot/regime inputs. |
+
+Existing top-level decision fields remain present for backwards compatibility.
+
+### `regime_allocation` block
 
 | Field | Type | Description |
 |---|---|---|
@@ -83,3 +99,4 @@ Allocation percentages must always sum to exactly 100.
 | Version | Change |
 |---|---|
 | 1.0 | Initial contract (Phase 4). |
+| 2.0 | Added top-level canonical envelope fields for `allocation_result.v2`. |

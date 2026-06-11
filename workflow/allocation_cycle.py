@@ -9,10 +9,12 @@ allocation output. All operations remain read-only and dry-run.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from config.allocation_config import (
+    ALLOCATION_SNAPSHOT_FRESH_HOURS,
     DEFAULT_ALLOCATION_PERCENTAGES,
     DEFAULT_CASH_RESERVE_MINIMUM_PERCENTAGE,
     DEFAULT_SNAPSHOT_PATHS,
@@ -31,10 +33,12 @@ from core.health_evaluator import evaluate_all_snapshot_health
 from core.market_regime_adapter import read_market_regime_snapshot
 from core.recommendation_engine import generate_allocation_recommendation
 from core.regime_allocation_engine import build_regime_allocation
-from core.snapshot_reader import read_configured_snapshots
+from core.snapshot_reader import BotHealthSummary, SnapshotReadResult, read_configured_snapshots
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESULT_SNAPSHOT_PATH = PROJECT_ROOT / "data" / "system" / "result_snapshot.json"
+PRODUCER_ID = "NovaAllocationBot"
+RESULT_SCHEMA_VERSION = "allocation_result.v2"
 
 
 def build_default_allocation_plan() -> AllocationPlan:
@@ -55,6 +59,13 @@ def build_dry_run_decision(
 ) -> AllocationDecision:
     read_results = read_configured_snapshots(snapshot_paths or DEFAULT_SNAPSHOT_PATHS)
     health_results = evaluate_all_snapshot_health(read_results)
+    return _build_dry_run_decision_from_health(read_results, health_results)
+
+
+def _build_dry_run_decision_from_health(
+    read_results: dict[str, SnapshotReadResult],
+    health_results: dict[str, BotHealthSummary],
+) -> AllocationDecision:
     bot_health = {
         bot_name: {
             "score": summary.health_score,
@@ -92,17 +103,21 @@ def build_dry_run_decision(
 
 def write_result_snapshot(
     decision: AllocationDecision,
-    result_path: Path = RESULT_SNAPSHOT_PATH,
+    result_path: Path | None = None,
     regime_allocation_dict: dict[str, Any] | None = None,
     compliance_dict: dict[str, Any] | None = None,
     authoritative_allocation_dict: dict[str, Any] | None = None,
+    envelope_dict: dict[str, Any] | None = None,
 ) -> Path:
+    result_path = result_path or RESULT_SNAPSHOT_PATH
     resolved_path = result_path.resolve()
     project_root = PROJECT_ROOT.resolve()
     if project_root not in resolved_path.parents and resolved_path != project_root:
         raise ValueError("Refusing to write outside NovaAllocationBot project root.")
     result_path.parent.mkdir(parents=True, exist_ok=True)
     payload = decision.to_dict()
+    if envelope_dict is not None:
+        payload.update(envelope_dict)
     if regime_allocation_dict is not None:
         payload["regime_allocation"] = regime_allocation_dict
     if compliance_dict is not None:
@@ -124,9 +139,13 @@ def run_allocation_cycle(
     regime_snapshot_path: Path | None = None,
     history_path: Path | None = None,
     current_values: dict[str, float | None] | None = None,
+    produced_at: datetime | None = None,
 ) -> dict[str, Any]:
-    decision = build_dry_run_decision(snapshot_paths=snapshot_paths)
-    regime_result = read_market_regime_snapshot(regime_snapshot_path)
+    produced_at_utc = _coerce_utc(produced_at)
+    read_results = read_configured_snapshots(snapshot_paths or DEFAULT_SNAPSHOT_PATHS)
+    health_results = evaluate_all_snapshot_health(read_results, now=produced_at_utc)
+    decision = _build_dry_run_decision_from_health(read_results, health_results)
+    regime_result = read_market_regime_snapshot(regime_snapshot_path, now=produced_at_utc)
     regime_allocation = build_regime_allocation(regime_result)
     regime_allocation_dict = regime_allocation.to_dict()
 
@@ -145,6 +164,14 @@ def run_allocation_cycle(
         current_values=current_values,
     )
     compliance_dict = compliance.to_dict()
+    envelope = build_result_snapshot_envelope(
+        produced_at=produced_at_utc,
+        read_results=read_results,
+        health_results=health_results,
+        decision=decision,
+        regime_result=regime_result,
+        authoritative_allocation=authoritative,
+    )
     output_path = None
     if write_snapshot:
         output_path = str(write_result_snapshot(
@@ -152,6 +179,7 @@ def run_allocation_cycle(
             regime_allocation_dict=regime_allocation_dict,
             compliance_dict=compliance_dict,
             authoritative_allocation_dict=authoritative,
+            envelope_dict=envelope,
         ))
         append_allocation_history(
             regime=regime_result.market_regime,
@@ -167,7 +195,88 @@ def run_allocation_cycle(
         "health_evaluated": decision.health_evaluated,
         "result_snapshot_path": output_path,
         "decision": decision.to_dict(),
+        "snapshot_envelope": envelope,
         "regime_allocation": regime_allocation_dict,
         "allocation_compliance": compliance_dict,
         "authoritative_allocation": authoritative,
     }
+
+
+def build_result_snapshot_envelope(
+    *,
+    produced_at: datetime,
+    read_results: dict[str, SnapshotReadResult],
+    health_results: dict[str, BotHealthSummary],
+    decision: AllocationDecision,
+    regime_result: Any,
+    authoritative_allocation: dict[str, Any],
+) -> dict[str, Any]:
+    fresh_until = produced_at + timedelta(hours=ALLOCATION_SNAPSHOT_FRESH_HOURS)
+    warnings: list[str] = list(decision.warnings)
+    reasons: list[str] = []
+
+    if not regime_result.regime_is_real:
+        reasons.append(
+            f"MarketRegimeBot input not real/fresh: {regime_result.reason}"
+        )
+    if authoritative_allocation.get("source") != "regime_aware":
+        refused = authoritative_allocation.get("refused_regime_reason")
+        if refused:
+            reasons.append(str(refused))
+    warnings.extend(str(w) for w in getattr(regime_result, "warnings", ()))
+    warnings.extend(str(w) for w in authoritative_allocation.get("regime_warnings", ()))
+
+    for bot_name in ("NovaBotV2", "NovaBotV2Options"):
+        read_result = read_results.get(bot_name)
+        summary = health_results.get(bot_name)
+        if read_result is None or not read_result.exists:
+            reasons.append(f"{bot_name} snapshot missing")
+            continue
+        if not read_result.valid or read_result.snapshot is None:
+            reasons.append(f"{bot_name} snapshot invalid")
+            continue
+        if summary is None or summary.health_status != "HEALTHY":
+            status = "UNKNOWN" if summary is None else summary.health_status
+            reasons.append(f"{bot_name} snapshot health not real/fresh enough: {status}")
+        if summary is not None:
+            for warning in summary.warnings:
+                if _input_warning_is_untrusted(warning):
+                    reasons.append(f"{bot_name} input warning: {warning}")
+
+    realness_reasons = tuple(dict.fromkeys(reasons))
+    envelope_warnings = tuple(dict.fromkeys(warnings + list(realness_reasons)))
+    return {
+        "producer_id": PRODUCER_ID,
+        "schema_version": RESULT_SCHEMA_VERSION,
+        "produced_at": produced_at.isoformat(),
+        "fresh_until": fresh_until.isoformat(),
+        "data_is_real": not realness_reasons,
+        "data_is_real_reasons": list(realness_reasons),
+        "input_warnings": list(envelope_warnings),
+    }
+
+
+def _input_warning_is_untrusted(warning: str) -> bool:
+    lowered = warning.lower()
+    markers = (
+        "missing",
+        "unreadable",
+        "empty",
+        "invalid",
+        "corrupt",
+        "stale",
+        "unknown",
+        "timestamp",
+        "unverified",
+        "contradiction",
+        "reports errors",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _coerce_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
