@@ -15,6 +15,7 @@ class BotSnapshotStatus:
     bot_name: str
     status: str | None = None
     dry_run: bool | None = None
+    live_trading_active: bool | None = None
     updated_at: str | None = None
     error_count: int = 0
     raw_fields: dict[str, Any] = field(default_factory=dict)
@@ -100,6 +101,7 @@ def read_bot_snapshot(bot_name: str, path: str | Path) -> SnapshotReadResult:
         bot_name=bot_name,
         status=_extract_status(payload),
         dry_run=_extract_dry_run(payload),
+        live_trading_active=_extract_live_trading_active(payload),
         updated_at=_extract_updated_at(payload),
         error_count=_extract_error_count(payload),
         raw_fields=dict(payload),
@@ -128,11 +130,28 @@ def _extract_status(payload: dict[str, Any]) -> str | None:
 
 
 def _extract_dry_run(payload: dict[str, Any]) -> bool | None:
-    for key in ("dry_run", "report_only", "paper_only"):
+    for key in ("dry_run", "paper_only"):
         value = payload.get(key)
         if isinstance(value, bool):
             return value
     return None
+
+
+def _extract_live_trading_active(payload: dict[str, Any]) -> bool | None:
+    values: list[bool] = []
+    armed_state = payload.get("armed_state")
+    if isinstance(armed_state, dict):
+        value = armed_state.get("live_trading_active")
+        if isinstance(value, bool):
+            values.append(value)
+
+    value = payload.get("live_trading_active")
+    if isinstance(value, bool):
+        values.append(value)
+
+    if not values:
+        return None
+    return any(values)
 
 
 def _extract_updated_at(payload: dict[str, Any]) -> str | None:

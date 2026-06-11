@@ -59,6 +59,11 @@ def build_dry_run_decision(
         bot_name: {
             "score": summary.health_score,
             "status": summary.health_status,
+            "live_trading_active": (
+                None
+                if read_results[bot_name].snapshot is None
+                else read_results[bot_name].snapshot.live_trading_active
+            ),
         }
         for bot_name, summary in health_results.items()
     }

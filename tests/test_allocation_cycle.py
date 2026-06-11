@@ -31,7 +31,16 @@ class AllocationCycleTests(unittest.TestCase):
                 json.dumps(
                     {
                         "status": "done",
-                        "dry_run": True,
+                        "report_only": True,
+                        "live_trading_active": True,
+                        "armed_state": {
+                            "allow_live_trades": True,
+                            "require_double_arm": True,
+                            "live_arm_present": True,
+                            "recent_live_execution": None,
+                            "live_trading_active": True,
+                            "source": "derived_reporting_only",
+                        },
                         "completed_at": "2026-06-06T10:00:00+00:00",
                     }
                 ),
@@ -42,6 +51,7 @@ class AllocationCycleTests(unittest.TestCase):
                     {
                         "status": "manual_review",
                         "dry_run": True,
+                        "live_trading_active": False,
                         "completed_at": "2026-06-06T10:00:00+00:00",
                     }
                 ),
@@ -67,6 +77,8 @@ class AllocationCycleTests(unittest.TestCase):
         self.assertTrue(result["health_evaluated"])
         self.assertIn("NovaBotV2", decision["bot_health"])
         self.assertIn("NovaBotV2Options", decision["bot_health"])
+        self.assertTrue(decision["bot_health"]["NovaBotV2"]["live_trading_active"])
+        self.assertFalse(decision["bot_health"]["NovaBotV2Options"]["live_trading_active"])
         recommendation = decision["recommendation"]
         self.assertEqual(recommendation["current_allocation"]["NovaBotV2"], 90)
         self.assertEqual(recommendation["current_allocation"]["NovaBotV2Options"], 10)

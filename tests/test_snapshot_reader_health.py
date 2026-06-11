@@ -32,6 +32,118 @@ class SnapshotReaderAndHealthTests(unittest.TestCase):
         self.assertTrue(result.snapshot.dry_run)
         self.assertIn("unexpected_future_field", result.snapshot.raw_fields)
 
+    def test_report_only_is_not_treated_as_dry_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result_snapshot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "project": "NovaBotV2",
+                        "status": "done",
+                        "report_only": True,
+                        "completed_at": "2026-06-11T10:39:41+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = read_bot_snapshot("NovaBotV2", path)
+
+        self.assertIsNone(result.snapshot.dry_run)
+
+    def test_novabotv2_live_state_reads_armed_state_shape(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result_snapshot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "project": "NovaBotV2",
+                        "status": "done",
+                        "report_only": True,
+                        "completed_at": "2026-06-11T10:39:41+00:00",
+                        "live_trading_active": True,
+                        "armed_state": {
+                            "allow_live_trades": True,
+                            "require_double_arm": True,
+                            "live_arm_present": True,
+                            "recent_live_execution": None,
+                            "live_trading_active": True,
+                            "source": "derived_reporting_only",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = read_bot_snapshot("NovaBotV2", path)
+            summary = evaluate_snapshot_health(
+                result,
+                now=datetime(2026, 6, 11, 12, tzinfo=timezone.utc),
+            )
+
+        self.assertTrue(result.snapshot.live_trading_active)
+        self.assertIsNone(result.snapshot.dry_run)
+        self.assertEqual(summary.health_score, 90)
+        self.assertEqual(summary.health_status, "HEALTHY")
+        self.assertNotIn("live_state_contradiction", summary.warnings)
+
+    def test_live_state_reads_top_level_when_armed_state_absent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result_snapshot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "status": "done",
+                        "dry_run": False,
+                        "completed_at": "2026-06-11T10:39:41+00:00",
+                        "live_trading_active": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = read_bot_snapshot("NovaBotV2", path)
+            summary = evaluate_snapshot_health(
+                result,
+                now=datetime(2026, 6, 11, 12, tzinfo=timezone.utc),
+            )
+
+        self.assertTrue(result.snapshot.live_trading_active)
+        self.assertFalse(result.snapshot.dry_run)
+        self.assertEqual(summary.health_score, 90)
+        self.assertEqual(summary.health_status, "HEALTHY")
+
+    def test_dry_run_and_live_state_contradiction_warns_and_caps_health(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result_snapshot.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "project": "NovaBotV2",
+                        "status": "done",
+                        "dry_run": True,
+                        "report_only": True,
+                        "completed_at": "2026-06-11T10:39:41+00:00",
+                        "live_trading_active": True,
+                        "armed_state": {
+                            "allow_live_trades": True,
+                            "require_double_arm": True,
+                            "live_arm_present": True,
+                            "recent_live_execution": None,
+                            "live_trading_active": True,
+                            "source": "derived_reporting_only",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = read_bot_snapshot("NovaBotV2", path)
+            summary = evaluate_snapshot_health(
+                result,
+                now=datetime(2026, 6, 11, 12, tzinfo=timezone.utc),
+            )
+
+        self.assertIn("live_state_contradiction", summary.warnings)
+        self.assertLessEqual(summary.health_score, 59)
+        self.assertEqual(summary.health_status, "DEGRADED")
+
     def test_missing_snapshot_returns_warning(self):
         result = read_bot_snapshot("NovaBotV2Options", Path("missing-result.json"))
         self.assertFalse(result.exists)

@@ -39,9 +39,13 @@ def evaluate_snapshot_health(
     snapshot = read_result.snapshot
     score = 70
 
-    if snapshot.dry_run is True:
+    live_state_contradiction = (
+        snapshot.dry_run is True and snapshot.live_trading_active is True
+    )
+
+    if snapshot.dry_run is True and snapshot.live_trading_active is not True:
         score += 10
-    elif snapshot.dry_run is False:
+    elif snapshot.dry_run is False and snapshot.live_trading_active is not True:
         score -= 20
 
     if snapshot.status is None:
@@ -64,6 +68,10 @@ def evaluate_snapshot_health(
     if snapshot.error_count > 0:
         score -= min(snapshot.error_count * 10, 30)
         warnings.append(f"{snapshot.bot_name} snapshot reports errors")
+
+    if live_state_contradiction:
+        warnings.append("live_state_contradiction")
+        score = min(score, 59)
 
     score = max(0, min(100, score))
     return BotHealthSummary(
