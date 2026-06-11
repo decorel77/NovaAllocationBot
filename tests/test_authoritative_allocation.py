@@ -14,6 +14,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from config.allocation_config import REGIME_MIN_CONFIDENCE
 from core.authoritative_allocation import build_authoritative_allocation
 from core.market_regime_adapter import RegimeReadResult, read_market_regime_snapshot
 from workflow import allocation_cycle
@@ -77,9 +78,9 @@ class AdapterRealnessTests(unittest.TestCase):
 
 
 class AuthoritativeAllocationTests(unittest.TestCase):
-    def _real_regime(self) -> RegimeReadResult:
+    def _real_regime(self, confidence: int = 71) -> RegimeReadResult:
         return RegimeReadResult(
-            market_regime="SIDEWAYS", confidence=71, input_source="MarketRegimeBot",
+            market_regime="SIDEWAYS", confidence=confidence, input_source="MarketRegimeBot",
             reason="real", is_fallback=False, data_is_real=True,
         )
 
@@ -112,6 +113,59 @@ class AuthoritativeAllocationTests(unittest.TestCase):
         self.assertEqual(out["allocation"], {"NovaBotV2": 80, "NovaBotV2Options": 20, "Cash": 0})
         self.assertIsNotNone(out["refused_regime_reason"])
         self.assertFalse(out["regime_is_real"])
+
+    def test_real_fresh_confidence_0_is_refused(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=self._real_regime(confidence=0),
+            regime_allocation={"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25},
+        )
+        self.assertEqual(out["source"], "health_based_regime_refused")
+        self.assertEqual(out["allocation"], {"NovaBotV2": 80, "NovaBotV2Options": 20, "Cash": 0})
+        self.assertIn("regime_low_confidence", out["regime_warnings"])
+        self.assertEqual(out["regime_min_confidence"], REGIME_MIN_CONFIDENCE)
+        self.assertIn("regime_low_confidence", out["refused_regime_reason"])
+
+    def test_real_fresh_confidence_59_is_refused(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=self._real_regime(confidence=59),
+            regime_allocation={"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25},
+        )
+        self.assertEqual(out["source"], "health_based_regime_refused")
+        self.assertEqual(out["allocation"], {"NovaBotV2": 80, "NovaBotV2Options": 20, "Cash": 0})
+        self.assertIn("regime_low_confidence", out["regime_warnings"])
+        self.assertEqual(out["regime_min_confidence"], REGIME_MIN_CONFIDENCE)
+
+    def test_real_fresh_confidence_60_is_accepted(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=self._real_regime(confidence=60),
+            regime_allocation={"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25},
+        )
+        self.assertEqual(out["source"], "regime_aware")
+        self.assertEqual(out["allocation"], {"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25})
+        self.assertNotIn("regime_low_confidence", out["regime_warnings"])
+        self.assertEqual(out["regime_min_confidence"], REGIME_MIN_CONFIDENCE)
+
+    def test_real_fresh_confidence_100_is_accepted(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=self._real_regime(confidence=100),
+            regime_allocation={"NovaBotV2": 50, "NovaBotV2Options": 0, "Cash": 50},
+        )
+        self.assertEqual(out["source"], "regime_aware")
+        self.assertEqual(out["allocation"], {"NovaBotV2": 50, "NovaBotV2Options": 0, "Cash": 50})
+        self.assertIn(f"threshold {REGIME_MIN_CONFIDENCE}", out["reason"])
+
+    def test_low_confidence_reason_distinct_from_unverified(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=self._real_regime(confidence=59),
+            regime_allocation={"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25},
+        )
+        self.assertIn("regime_low_confidence", out["refused_regime_reason"])
+        self.assertNotIn("not verified real", out["refused_regime_reason"])
 
     def test_allocation_totals_100_and_safe(self):
         for regime in (self._real_regime(), self._unverified_regime()):

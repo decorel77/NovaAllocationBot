@@ -8,9 +8,10 @@ into exactly ONE authoritative allocation and records the others as diagnostics.
 
 Regime influence is only applied when the upstream MarketRegimeBot snapshot is
 verified real (REPAIR-005 ``data_is_real`` contract, via
-``RegimeReadResult.regime_is_real``). When the regime is fixture/unverified/stale
-or unavailable, the regime is REFUSED and the authoritative allocation falls back
-to the health-based recommendation, with the refusal reason recorded.
+``RegimeReadResult.regime_is_real``) and meets the configured confidence
+threshold. When the regime is fixture/unverified/stale, unavailable, or too low
+confidence, the regime is REFUSED and the authoritative allocation falls back to
+the health-based recommendation, with the refusal reason recorded.
 
 ADVISORY_ONLY. Read-only. No broker, orders, money movement, or downstream export.
 """
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from config.allocation_config import ALLOCATION_CONTRACT_VERSION
+from config.allocation_config import ALLOCATION_CONTRACT_VERSION, REGIME_MIN_CONFIDENCE
 from core.market_regime_adapter import RegimeReadResult
 
 # The authoritative allocation is always expressed in this canonical 3-bucket
@@ -71,29 +72,41 @@ def build_authoritative_allocation(
 ) -> dict[str, Any]:
     """Return the single authoritative allocation + provenance.
 
-    - regime verified real  -> authoritative = regime-aware allocation
-    - regime unverified/missing -> regime REFUSED, authoritative = health-based
+    - regime verified real and confident -> authoritative = regime-aware allocation
+    - regime unverified/stale/missing/low-confidence -> REFUSED, health-based
       recommendation, refusal reason recorded.
     """
     health_alloc = _to_canonical_scheme(dict(recommendation.get("recommended_allocation") or {}))
+    warnings = list(regime_result.warnings)
+    confidence_is_usable = regime_result.confidence >= REGIME_MIN_CONFIDENCE
 
-    if regime_result.regime_is_real:
+    if regime_result.regime_is_real and confidence_is_usable:
         allocation = _to_canonical_scheme(dict(regime_allocation))
         source = "regime_aware"
         refused_regime_reason = None
         reason = (
             f"Regime-aware allocation for verified-real regime "
             f"'{regime_result.market_regime}' (confidence {regime_result.confidence}, "
-            f"data_is_real=true)."
+            f"threshold {REGIME_MIN_CONFIDENCE}, data_is_real=true)."
         )
     else:
         allocation = health_alloc
         source = "health_based_regime_refused"
-        refused_regime_reason = (
-            f"Regime '{regime_result.market_regime}' REFUSED: not verified real "
-            f"({regime_result.reason}). Falling back to health-based recommendation."
-        )
-        reason = "Health-based recommendation (regime input was not verified real)."
+        if regime_result.regime_is_real:
+            if "regime_low_confidence" not in warnings:
+                warnings.append("regime_low_confidence")
+            refused_regime_reason = (
+                f"Regime '{regime_result.market_regime}' REFUSED: regime_low_confidence "
+                f"(confidence {regime_result.confidence} < threshold "
+                f"{REGIME_MIN_CONFIDENCE}). Falling back to health-based recommendation."
+            )
+            reason = "Health-based recommendation (regime confidence below threshold)."
+        else:
+            refused_regime_reason = (
+                f"Regime '{regime_result.market_regime}' REFUSED: not verified real "
+                f"({regime_result.reason}). Falling back to health-based recommendation."
+            )
+            reason = "Health-based recommendation (regime input was not verified real)."
 
     return {
         "allocation": allocation,
@@ -101,6 +114,8 @@ def build_authoritative_allocation(
         "regime": regime_result.market_regime,
         "regime_is_real": regime_result.regime_is_real,
         "regime_confidence": regime_result.confidence,
+        "regime_min_confidence": REGIME_MIN_CONFIDENCE,
+        "regime_warnings": warnings,
         "reason": reason,
         "refused_regime_reason": refused_regime_reason,
         "recommendation_only": True,
