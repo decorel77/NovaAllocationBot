@@ -1,6 +1,6 @@
 ﻿import unittest
 
-from core.recommendation_engine import generate_allocation_recommendation
+from core.recommendation_engine import CURRENT_ALLOCATION, generate_allocation_recommendation
 
 
 class RecommendationEngineTests(unittest.TestCase):
@@ -24,15 +24,65 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(recommendation.recommended_allocation["NovaBotV2"], 95)
         self.assertEqual(recommendation.recommended_allocation["NovaBotV2Options"], 5)
 
-    def test_healthy_unknown_recommends_100_0(self):
+    def test_novabotv2_healthy_options_unknown_holds_baseline(self):
         recommendation = generate_allocation_recommendation(
             {
                 "NovaBotV2": {"score": 95, "status": "HEALTHY"},
                 "NovaBotV2Options": {"score": 0, "status": "UNKNOWN"},
             }
         )
-        self.assertEqual(recommendation.recommended_allocation["NovaBotV2"], 100)
-        self.assertEqual(recommendation.recommended_allocation["NovaBotV2Options"], 0)
+        reasons = " ".join(recommendation.recommendation_reason).lower()
+
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2"],
+            CURRENT_ALLOCATION["NovaBotV2"],
+        )
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2Options"],
+            CURRENT_ALLOCATION["NovaBotV2Options"],
+        )
+        self.assertIn("insufficient data", reasons)
+        self.assertIn("baseline", reasons)
+
+    def test_novabotv2_unknown_options_healthy_holds_baseline(self):
+        recommendation = generate_allocation_recommendation(
+            {
+                "NovaBotV2": {"score": 0, "status": "UNKNOWN"},
+                "NovaBotV2Options": {"score": 95, "status": "HEALTHY"},
+            }
+        )
+        reasons = " ".join(recommendation.recommendation_reason).lower()
+
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2"],
+            CURRENT_ALLOCATION["NovaBotV2"],
+        )
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2Options"],
+            CURRENT_ALLOCATION["NovaBotV2Options"],
+        )
+        self.assertIn("insufficient data", reasons)
+        self.assertIn("baseline", reasons)
+
+    def test_both_active_bots_unknown_holds_baseline(self):
+        recommendation = generate_allocation_recommendation(
+            {
+                "NovaBotV2": {"score": 0, "status": "UNKNOWN"},
+                "NovaBotV2Options": {"score": 0, "status": "UNKNOWN"},
+            }
+        )
+        reasons = " ".join(recommendation.recommendation_reason).lower()
+
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2"],
+            CURRENT_ALLOCATION["NovaBotV2"],
+        )
+        self.assertLessEqual(
+            recommendation.recommended_allocation["NovaBotV2Options"],
+            CURRENT_ALLOCATION["NovaBotV2Options"],
+        )
+        self.assertIn("insufficient data", reasons)
+        self.assertIn("baseline", reasons)
 
     def test_warning_healthy_recommends_80_20(self):
         recommendation = generate_allocation_recommendation(
@@ -57,6 +107,18 @@ class RecommendationEngineTests(unittest.TestCase):
             {
                 "NovaBotV2": {"score": 50, "status": "WARNING"},
                 "NovaBotV2Options": {"score": 90, "status": "HEALTHY"},
+            },
+            {
+                "NovaBotV2": {"score": 0, "status": "UNKNOWN"},
+                "NovaBotV2Options": {"score": 90, "status": "HEALTHY"},
+            },
+            {
+                "NovaBotV2": {"score": 90, "status": "HEALTHY"},
+                "NovaBotV2Options": {"score": 0, "status": "UNKNOWN"},
+            },
+            {
+                "NovaBotV2": {"score": 0, "status": "UNKNOWN"},
+                "NovaBotV2Options": {"score": 0, "status": "UNKNOWN"},
             },
         ]
         for bot_health in cases:

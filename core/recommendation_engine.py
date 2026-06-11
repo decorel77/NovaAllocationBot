@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from config.allocation_config import DEFAULT_ALLOCATION_PERCENTAGES
+
 CURRENT_ALLOCATION = {
-    "NovaBotV2": 90,
-    "NovaBotV2Options": 10,
-    "NovaCryptoBot": 0,
-    "CashReserve": 0,
+    bot_name: int(percentage)
+    for bot_name, percentage in DEFAULT_ALLOCATION_PERCENTAGES.items()
 }
+BASELINE_STOCK_PCT = CURRENT_ALLOCATION["NovaBotV2"]
+BASELINE_OPTIONS_PCT = CURRENT_ALLOCATION["NovaBotV2Options"]
 
 
 @dataclass(frozen=True)
@@ -42,15 +44,20 @@ def generate_allocation_recommendation(
     options = _health_entry(bot_health, "NovaBotV2Options")
     reasons: list[str] = []
 
-    if options["status"] == "UNKNOWN":
-        recommended = _with_fixed_future_allocations(100, 0)
-        reasons.append("NovaBotV2Options health status unknown; recommend zero options allocation")
-    elif stock["status"] == "UNKNOWN":
-        recommended = _with_fixed_future_allocations(80, 20)
-        reasons.append("NovaBotV2 health status unknown; keep options capped at 20%")
+    # Rule table for active-bot health recommendations:
+    # - Any UNKNOWN active-bot input: hold configured baseline. Missing data must
+    #   never increase another risky bucket above baseline.
+    # - HEALTHY / HEALTHY: hold configured baseline.
+    # - Clear non-UNKNOWN imbalance: tilt only between known active-bot inputs.
+    # - Warnings do not change allocation; they add advisory context only.
+    if stock["status"] == "UNKNOWN" or options["status"] == "UNKNOWN":
+        recommended = _baseline_allocation()
+        reasons.append("insufficient data - holding baseline allocation")
     elif stock["status"] == "HEALTHY" and options["status"] == "HEALTHY":
-        recommended = _with_fixed_future_allocations(90, 10)
-        reasons.append("Both active bots are healthy; keep current 90/10 allocation")
+        recommended = _baseline_allocation()
+        reasons.append(
+            "Both active bots are healthy; keep current baseline allocation"
+        )
     elif stock["score"] >= 80 and options["score"] < 60:
         recommended = _with_fixed_future_allocations(95, 5)
         reasons.append("NovaBotV2 health score higher than NovaBotV2Options")
@@ -64,8 +71,10 @@ def generate_allocation_recommendation(
         recommended = _with_fixed_future_allocations(80, 20)
         reasons.append("NovaBotV2Options health score higher than NovaBotV2")
     else:
-        recommended = _with_fixed_future_allocations(90, 10)
-        reasons.append("Active bot health scores are balanced; keep current 90/10 allocation")
+        recommended = _baseline_allocation()
+        reasons.append(
+            "Active bot health scores are balanced; keep current baseline allocation"
+        )
 
     if warnings:
         reasons.append("Snapshot warnings are present; recommendation remains advisory only")
@@ -85,6 +94,10 @@ def _health_entry(bot_health: dict[str, dict[str, Any]], bot_name: str) -> dict[
         "score": int(entry.get("score", 0)),
         "status": str(entry.get("status", "UNKNOWN")).upper(),
     }
+
+
+def _baseline_allocation() -> dict[str, int]:
+    return dict(CURRENT_ALLOCATION)
 
 
 def _with_fixed_future_allocations(stock_pct: int, options_pct: int) -> dict[str, int]:
