@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from config.allocation_config import FUTURE_SNAPSHOT_PATHS
+from config.allocation_config import FUTURE_SNAPSHOT_PATHS, REGIME_STALE_AFTER_HOURS
 
 KNOWN_REGIMES = {"BULL", "SIDEWAYS", "BEAR", "HIGH_VOLATILITY"}
 
@@ -27,6 +28,8 @@ class RegimeReadResult:
     is_fallback: bool
     raw_data: dict[str, Any] = field(default_factory=dict)
     warnings: tuple[str, ...] = ()
+    produced_at: str | None = None
+    fresh_until: str | None = None
     # REPAIR-007: realness of the upstream regime (REPAIR-005 canonical contract).
     # True only when MarketRegimeBot stamped data_is_real=true (live market data).
     # Fixture/unverified/stale regimes leave this False so the allocator refuses
@@ -41,7 +44,9 @@ class RegimeReadResult:
 
 def read_market_regime_snapshot(
     path: Path | None = None,
+    now: datetime | None = None,
 ) -> RegimeReadResult:
+    now = now or datetime.now(timezone.utc)
     snapshot_path = Path(path) if path is not None else _DEFAULT_REGIME_SNAPSHOT_PATH
 
     if not snapshot_path.exists():
@@ -82,17 +87,20 @@ def read_market_regime_snapshot(
     # may be treated as a verified-real regime. A fixture/unverified regime is
     # still surfaced for diagnostics but carries a warning and data_is_real=False
     # so the authoritative allocator refuses to let it steer the allocation.
-    data_is_real = payload.get("data_is_real") is True
+    timestamp_warnings, timestamps_are_fresh = _freshness_warnings(payload, now)
+    data_is_real = payload.get("data_is_real") is True and timestamps_are_fresh
     source_raw = payload.get("input_source")
     upstream_source = (
         source_raw.strip() if isinstance(source_raw, str) and source_raw.strip() else "unknown"
     )
 
-    warnings: tuple[str, ...] = ()
+    warnings: list[str] = list(timestamp_warnings)
     reason = f"Regime '{regime}' read from MarketRegimeBot snapshot (confidence {confidence})"
-    if not data_is_real:
-        warnings = ("regime_unverified",)
+    if payload.get("data_is_real") is not True:
+        warnings.append("regime_unverified")
         reason += f" — UNVERIFIED (data_is_real != true, input_source={upstream_source!r})"
+    if not timestamps_are_fresh:
+        reason += " — REFUSED (regime timestamp missing, unparseable, or stale)"
 
     return RegimeReadResult(
         market_regime=regime,
@@ -101,7 +109,9 @@ def read_market_regime_snapshot(
         reason=reason,
         is_fallback=False,
         raw_data=dict(payload),
-        warnings=warnings,
+        warnings=tuple(warnings),
+        produced_at=_timestamp_string(payload, "produced_at"),
+        fresh_until=_timestamp_string(payload, "fresh_until"),
         data_is_real=data_is_real,
     )
 
@@ -120,3 +130,50 @@ def _fallback(
         raw_data=raw or {},
         warnings=warnings,
     )
+
+
+def _freshness_warnings(
+    payload: dict[str, Any],
+    now: datetime,
+) -> tuple[tuple[str, ...], bool]:
+    warnings: list[str] = []
+    produced_at_raw = _timestamp_string(payload, "produced_at")
+    fresh_until_raw = _timestamp_string(payload, "fresh_until")
+
+    if produced_at_raw is None or fresh_until_raw is None:
+        return ("regime_timestamp_missing",), False
+
+    produced_at = _parse_timestamp(produced_at_raw)
+    fresh_until = _parse_timestamp(fresh_until_raw)
+    if produced_at is None or fresh_until is None:
+        return ("regime_timestamp_unparseable",), False
+
+    if produced_at > now:
+        warnings.append("regime_timestamp_future")
+    elif now - produced_at > timedelta(hours=REGIME_STALE_AFTER_HOURS):
+        warnings.append("regime_stale")
+
+    if fresh_until < now:
+        warnings.append("regime_stale")
+
+    return tuple(dict.fromkeys(warnings)), "regime_stale" not in warnings
+
+
+def _timestamp_string(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

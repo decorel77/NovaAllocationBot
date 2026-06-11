@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.market_regime_adapter import read_market_regime_snapshot
@@ -24,6 +25,8 @@ def _write_snapshot(tmp: Path, data: dict) -> Path:
 
 
 class TestRegimeAdapter(unittest.TestCase):
+    NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
+
     def test_bull_regime_read(self):
         with tempfile.TemporaryDirectory() as d:
             p = _write_snapshot(Path(d), {"market_regime": "BULL", "confidence": 80, "project": "MarketRegimeBot"})
@@ -68,6 +71,104 @@ class TestRegimeAdapter(unittest.TestCase):
             result = read_market_regime_snapshot(p)
         self.assertFalse(result.is_fallback)
         self.assertEqual(result.confidence, 0)
+
+    def test_fresh_timestamp_accepted(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(
+                Path(d),
+                {
+                    "market_regime": "SIDEWAYS",
+                    "confidence": 71,
+                    "data_is_real": True,
+                    "input_source": "yfinance",
+                    "produced_at": "2026-06-11T10:00:00Z",
+                    "fresh_until": "2026-06-11T14:00:00+00:00",
+                },
+            )
+            result = read_market_regime_snapshot(p, now=self.NOW)
+
+        self.assertTrue(result.data_is_real)
+        self.assertTrue(result.regime_is_real)
+        self.assertEqual(result.produced_at, "2026-06-11T10:00:00Z")
+        self.assertEqual(result.fresh_until, "2026-06-11T14:00:00+00:00")
+        self.assertNotIn("regime_stale", result.warnings)
+
+    def test_stale_timestamp_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(
+                Path(d),
+                {
+                    "market_regime": "SIDEWAYS",
+                    "confidence": 71,
+                    "data_is_real": True,
+                    "input_source": "yfinance",
+                    "produced_at": "2026-06-09T11:00:00+00:00",
+                    "fresh_until": "2026-06-10T12:00:00+00:00",
+                },
+            )
+            result = read_market_regime_snapshot(p, now=self.NOW)
+
+        self.assertFalse(result.data_is_real)
+        self.assertFalse(result.regime_is_real)
+        self.assertIn("regime_stale", result.warnings)
+        self.assertEqual(result.market_regime, "SIDEWAYS")
+
+    def test_missing_timestamp_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(
+                Path(d),
+                {
+                    "market_regime": "BULL",
+                    "confidence": 80,
+                    "data_is_real": True,
+                    "input_source": "yfinance",
+                },
+            )
+            result = read_market_regime_snapshot(p, now=self.NOW)
+
+        self.assertFalse(result.data_is_real)
+        self.assertFalse(result.regime_is_real)
+        self.assertIn("regime_timestamp_missing", result.warnings)
+        self.assertEqual(result.market_regime, "BULL")
+
+    def test_unparseable_timestamp_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(
+                Path(d),
+                {
+                    "market_regime": "BEAR",
+                    "confidence": 70,
+                    "data_is_real": True,
+                    "input_source": "yfinance",
+                    "produced_at": "not-a-time",
+                    "fresh_until": "2026-06-11T14:00:00+00:00",
+                },
+            )
+            result = read_market_regime_snapshot(p, now=self.NOW)
+
+        self.assertFalse(result.data_is_real)
+        self.assertFalse(result.regime_is_real)
+        self.assertIn("regime_timestamp_unparseable", result.warnings)
+        self.assertEqual(result.market_regime, "BEAR")
+
+    def test_future_timestamp_accepted_with_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(
+                Path(d),
+                {
+                    "market_regime": "HIGH_VOLATILITY",
+                    "confidence": 65,
+                    "data_is_real": True,
+                    "input_source": "yfinance",
+                    "produced_at": "2026-06-11T13:00:00",
+                    "fresh_until": "2026-06-11T15:00:00",
+                },
+            )
+            result = read_market_regime_snapshot(p, now=self.NOW)
+
+        self.assertTrue(result.data_is_real)
+        self.assertTrue(result.regime_is_real)
+        self.assertIn("regime_timestamp_future", result.warnings)
 
 
 class TestRegimeAllocationEngine(unittest.TestCase):

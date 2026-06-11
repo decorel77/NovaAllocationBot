@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.authoritative_allocation import build_authoritative_allocation
@@ -30,11 +31,15 @@ _RECOMMENDATION = {
 
 
 class AdapterRealnessTests(unittest.TestCase):
+    NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
+
     def test_real_snapshot_marked_real(self):
         with tempfile.TemporaryDirectory() as d:
             p = _write(Path(d), {"market_regime": "SIDEWAYS", "confidence": 71,
-                                 "data_is_real": True, "input_source": "yfinance"})
-            r = read_market_regime_snapshot(p)
+                                 "data_is_real": True, "input_source": "yfinance",
+                                 "produced_at": "2026-06-11T10:00:00+00:00",
+                                 "fresh_until": "2026-06-11T14:00:00+00:00"})
+            r = read_market_regime_snapshot(p, now=self.NOW)
         self.assertTrue(r.data_is_real)
         self.assertTrue(r.regime_is_real)
         self.assertNotIn("regime_unverified", r.warnings)
@@ -42,18 +47,33 @@ class AdapterRealnessTests(unittest.TestCase):
     def test_unverified_snapshot_flagged(self):
         with tempfile.TemporaryDirectory() as d:
             p = _write(Path(d), {"market_regime": "BULL", "confidence": 80,
-                                 "data_is_real": False, "input_source": "explicit"})
-            r = read_market_regime_snapshot(p)
+                                 "data_is_real": False, "input_source": "explicit",
+                                 "produced_at": "2026-06-11T10:00:00+00:00",
+                                 "fresh_until": "2026-06-11T14:00:00+00:00"})
+            r = read_market_regime_snapshot(p, now=self.NOW)
         self.assertFalse(r.data_is_real)
         self.assertFalse(r.regime_is_real)
         self.assertIn("regime_unverified", r.warnings)
 
     def test_missing_data_is_real_is_unverified(self):
         with tempfile.TemporaryDirectory() as d:
-            p = _write(Path(d), {"market_regime": "BULL", "confidence": 80})
-            r = read_market_regime_snapshot(p)
+            p = _write(Path(d), {"market_regime": "BULL", "confidence": 80,
+                                 "produced_at": "2026-06-11T10:00:00+00:00",
+                                 "fresh_until": "2026-06-11T14:00:00+00:00"})
+            r = read_market_regime_snapshot(p, now=self.NOW)
         self.assertFalse(r.data_is_real)
         self.assertFalse(r.regime_is_real)
+
+    def test_stale_real_snapshot_is_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write(Path(d), {"market_regime": "BULL", "confidence": 80,
+                                 "data_is_real": True, "input_source": "yfinance",
+                                 "produced_at": "2026-06-09T10:00:00+00:00",
+                                 "fresh_until": "2026-06-10T14:00:00+00:00"})
+            r = read_market_regime_snapshot(p, now=self.NOW)
+        self.assertFalse(r.data_is_real)
+        self.assertFalse(r.regime_is_real)
+        self.assertIn("regime_stale", r.warnings)
 
 
 class AuthoritativeAllocationTests(unittest.TestCase):
@@ -110,7 +130,9 @@ class CycleAuthoritativeTests(unittest.TestCase):
     def test_cycle_surfaces_authoritative_regime_aware_when_real(self):
         with tempfile.TemporaryDirectory() as d:
             regime_path = _write(Path(d), {"market_regime": "BULL", "confidence": 80,
-                                           "data_is_real": True, "input_source": "yfinance"})
+                                           "data_is_real": True, "input_source": "yfinance",
+                                           "produced_at": "2099-01-01T10:00:00+00:00",
+                                           "fresh_until": "2099-01-01T14:00:00+00:00"})
             result = allocation_cycle.run_allocation_cycle(
                 write_snapshot=False, regime_snapshot_path=regime_path,
             )
@@ -122,7 +144,9 @@ class CycleAuthoritativeTests(unittest.TestCase):
     def test_cycle_refuses_unverified_regime(self):
         with tempfile.TemporaryDirectory() as d:
             regime_path = _write(Path(d), {"market_regime": "BULL", "confidence": 80,
-                                           "data_is_real": False, "input_source": "explicit"})
+                                           "data_is_real": False, "input_source": "explicit",
+                                           "produced_at": "2099-01-01T10:00:00+00:00",
+                                           "fresh_until": "2099-01-01T14:00:00+00:00"})
             result = allocation_cycle.run_allocation_cycle(
                 write_snapshot=False, regime_snapshot_path=regime_path,
             )
