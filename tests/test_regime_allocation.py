@@ -24,6 +24,15 @@ def _write_snapshot(tmp: Path, data: dict) -> Path:
     return p
 
 
+def _run_cycle_in_temp_project(root: Path, **kwargs):
+    original_root = allocation_cycle.PROJECT_ROOT
+    try:
+        allocation_cycle.PROJECT_ROOT = root
+        return allocation_cycle.run_allocation_cycle(**kwargs)
+    finally:
+        allocation_cycle.PROJECT_ROOT = original_root
+
+
 class TestRegimeAdapter(unittest.TestCase):
     NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -291,11 +300,14 @@ class TestRegimeAllocationCycleIntegration(unittest.TestCase):
     def test_snapshot_contains_regime_allocation(self):
         with tempfile.TemporaryDirectory() as d:
             regime_path = _write_snapshot(Path(d), {"market_regime": "SIDEWAYS", "confidence": 60})
-            result = allocation_cycle.run_allocation_cycle(
+            result = _run_cycle_in_temp_project(
+                Path(d),
                 write_snapshot=True,
                 regime_snapshot_path=regime_path,
+                history_path=Path(d) / "history.json",
+                result_path=Path(d) / "result_snapshot.json",
             )
-        written = json.loads(Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig"))
+            written = json.loads(Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig"))
         self.assertIn("regime_allocation", written)
         ra = written["regime_allocation"]
         self.assertEqual(ra["market_regime"], "SIDEWAYS")
@@ -305,13 +317,15 @@ class TestRegimeAllocationCycleIntegration(unittest.TestCase):
     def test_no_writes_outside_novaallocationsbot(self):
         with tempfile.TemporaryDirectory() as d:
             regime_path = _write_snapshot(Path(d), {"market_regime": "BEAR", "confidence": 70})
-            result = allocation_cycle.run_allocation_cycle(
+            result = _run_cycle_in_temp_project(
+                Path(d),
                 write_snapshot=True,
                 regime_snapshot_path=regime_path,
+                history_path=Path(d) / "history.json",
+                result_path=Path(d) / "result_snapshot.json",
             )
-        written_path = Path(result["result_snapshot_path"]).resolve()
-        project_root = allocation_cycle.PROJECT_ROOT.resolve()
-        self.assertIn(project_root, written_path.parents)
+            written_path = Path(result["result_snapshot_path"]).resolve()
+            self.assertIn(Path(d).resolve(), written_path.parents)
 
     def test_no_broker_order_trading_imports(self):
         allocation_cycle.run_allocation_cycle(write_snapshot=False)

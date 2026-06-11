@@ -138,6 +138,7 @@ def run_allocation_cycle(
     snapshot_paths: dict[str, Path] | None = None,
     regime_snapshot_path: Path | None = None,
     history_path: Path | None = None,
+    result_path: Path | None = None,
     current_values: dict[str, float | None] | None = None,
     produced_at: datetime | None = None,
 ) -> dict[str, Any]:
@@ -176,6 +177,7 @@ def run_allocation_cycle(
     if write_snapshot:
         output_path = str(write_result_snapshot(
             decision,
+            result_path=result_path,
             regime_allocation_dict=regime_allocation_dict,
             compliance_dict=compliance_dict,
             authoritative_allocation_dict=authoritative,

@@ -7,7 +7,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from config.allocation_config import ALLOCATION_CONTRACT_VERSION, ALLOCATION_HISTORY_MAX_ENTRIES
+from config.allocation_config import (
+    ALLOCATION_CONTRACT_VERSION,
+    ALLOCATION_HISTORY_MAX_ENTRIES,
+    ALLOCATION_HISTORY_PATH,
+)
 from core.allocation_history import (
     append_allocation_history,
     read_allocation_history,
@@ -17,6 +21,15 @@ from workflow import allocation_cycle
 
 
 _SAMPLE_ALLOCATION = {"NovaBotV2": 90, "NovaBotV2Options": 10, "Cash": 0}
+
+
+def _run_cycle_in_temp_project(root: Path, **kwargs):
+    original_root = allocation_cycle.PROJECT_ROOT
+    try:
+        allocation_cycle.PROJECT_ROOT = root
+        return allocation_cycle.run_allocation_cycle(**kwargs)
+    finally:
+        allocation_cycle.PROJECT_ROOT = original_root
 
 
 class TestHistoryAppend(unittest.TestCase):
@@ -131,12 +144,17 @@ class TestContractVersion(unittest.TestCase):
     def test_snapshot_contains_allocation_version(self):
         with tempfile.TemporaryDirectory() as d:
             regime_file = Path(d) / "regime.json"
+            history_file = Path(d) / "history.json"
+            result_file = Path(d) / "result_snapshot.json"
             regime_file.write_text(json.dumps({"market_regime": "BULL", "confidence": 80}), encoding="utf-8")
-            result = allocation_cycle.run_allocation_cycle(
+            result = _run_cycle_in_temp_project(
+                Path(d),
                 write_snapshot=True,
                 regime_snapshot_path=regime_file,
+                history_path=history_file,
+                result_path=result_file,
             )
-        written = json.loads(Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig"))
+            written = json.loads(Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig"))
         self.assertIn("allocation_version", written["regime_allocation"])
         self.assertEqual(written["regime_allocation"]["allocation_version"], ALLOCATION_CONTRACT_VERSION)
 
@@ -147,10 +165,12 @@ class TestHistoryCycleIntegration(unittest.TestCase):
             regime_file = Path(d) / "regime.json"
             history_file = Path(d) / "history.json"
             regime_file.write_text(json.dumps({"market_regime": "BEAR", "confidence": 65}), encoding="utf-8")
-            allocation_cycle.run_allocation_cycle(
+            _run_cycle_in_temp_project(
+                Path(d),
                 write_snapshot=True,
                 regime_snapshot_path=regime_file,
                 history_path=history_file,
+                result_path=Path(d) / "result_snapshot.json",
             )
             entries = read_allocation_history(history_file)
             self.assertEqual(len(entries), 1)
@@ -163,10 +183,12 @@ class TestHistoryCycleIntegration(unittest.TestCase):
             history_file = Path(d) / "history.json"
             regime_file.write_text(json.dumps({"market_regime": "BULL", "confidence": 80}), encoding="utf-8")
             for _ in range(5):
-                allocation_cycle.run_allocation_cycle(
+                _run_cycle_in_temp_project(
+                    Path(d),
                     write_snapshot=True,
                     regime_snapshot_path=regime_file,
                     history_path=history_file,
+                    result_path=Path(d) / "result_snapshot.json",
                 )
             entries = read_allocation_history(history_file)
             self.assertLessEqual(len(entries), ALLOCATION_HISTORY_MAX_ENTRIES)
@@ -176,6 +198,22 @@ class TestHistoryCycleIntegration(unittest.TestCase):
         with self.assertRaises(ValueError):
             from core.allocation_history import _write_history
             _write_history(outside, [])
+
+    def test_cycle_with_injected_paths_does_not_mutate_production_history(self):
+        before = ALLOCATION_HISTORY_PATH.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            regime_file = root / "regime.json"
+            regime_file.write_text(json.dumps({"market_regime": "BULL", "confidence": 80}), encoding="utf-8")
+            _run_cycle_in_temp_project(
+                root,
+                write_snapshot=True,
+                regime_snapshot_path=regime_file,
+                history_path=root / "history.json",
+                result_path=root / "result_snapshot.json",
+            )
+        after = ALLOCATION_HISTORY_PATH.read_text(encoding="utf-8")
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,15 @@ from workflow import allocation_cycle
 _TARGET_BULL = {"NovaBotV2": 90, "NovaBotV2Options": 10, "Cash": 0}
 
 
+def _run_cycle_in_temp_project(root: Path, **kwargs):
+    original_root = allocation_cycle.PROJECT_ROOT
+    try:
+        allocation_cycle.PROJECT_ROOT = root
+        return allocation_cycle.run_allocation_cycle(**kwargs)
+    finally:
+        allocation_cycle.PROJECT_ROOT = original_root
+
+
 def _bucket(result, name: str):
     return next(b for b in result.buckets if b.bucket == name)
 
@@ -153,13 +162,16 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
                 json.dumps({"market_regime": "BULL", "confidence": 80}),
                 encoding="utf-8",
             )
-            result = allocation_cycle.run_allocation_cycle(
+            result = _run_cycle_in_temp_project(
+                Path(d),
                 write_snapshot=True,
                 regime_snapshot_path=regime_file,
+                history_path=Path(d) / "history.json",
+                result_path=Path(d) / "result_snapshot.json",
             )
-        written = json.loads(
-            Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig")
-        )
+            written = json.loads(
+                Path(result["result_snapshot_path"]).read_text(encoding="utf-8-sig")
+            )
         self.assertIn("allocation_compliance", written)
         ac = written["allocation_compliance"]
         self.assertIn("global_status", ac)

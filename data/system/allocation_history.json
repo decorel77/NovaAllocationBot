@@ -1,18 +1,5 @@
 {
-  "entries": [
-    {
-      "allocation": {
-        "Cash": 10,
-        "NovaBotV2": 80,
-        "NovaBotV2Options": 10
-      },
-      "allocation_version": "1.0",
-      "confidence": 71,
-      "input_source": "regime_aware",
-      "reason": "Regime-aware allocation for verified-real regime 'SIDEWAYS' (confidence 71, data_is_real=true).",
-      "regime": "SIDEWAYS",
-      "timestamp": "2026-06-10T13:24:57.643295+00:00"
-    }
-  ],
+  "cleanup_note": "Cleaned on 2026-06-11 for ALLOC-QA-003-CLEANUP. Previous contents were contaminated by fixture/test allocation cycle runs and remain available in git history. No real allocation cycle history is fabricated here.",
+  "entries": [],
   "schema_version": "1.0"
 }
