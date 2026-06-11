@@ -1,6 +1,7 @@
 ﻿__pycache__/
 *.pyc
 .pytest_cache/
+.tmp/
 .venv/
 data/system/result_snapshot.json
 logs/
