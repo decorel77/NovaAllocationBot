@@ -252,6 +252,12 @@ def build_result_snapshot_envelope(
         "schema_version": RESULT_SCHEMA_VERSION,
         "produced_at": produced_at.isoformat(),
         "fresh_until": fresh_until.isoformat(),
+        # Static dashboard-consumption marker: the allocation snapshot carries
+        # only public-safe fields (allocation %, bot-health scores/status,
+        # warnings, regime context) — no account/order ids, secrets, or paths.
+        # This is NOT a realness claim; realness stays fail-closed in
+        # ``data_is_real`` (False whenever any input is missing/stale/fake).
+        "public_safe": True,
         "data_is_real": not realness_reasons,
         "data_is_real_reasons": list(realness_reasons),
         "input_warnings": list(envelope_warnings),

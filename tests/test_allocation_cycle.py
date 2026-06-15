@@ -253,6 +253,7 @@ class AllocationSnapshotEnvelopeTests(unittest.TestCase):
         self.assertIn("produced_at", payload)
         self.assertIn("fresh_until", payload)
         self.assertIn("data_is_real", payload)
+        self.assertIs(payload["public_safe"], True)
         for old_key in (
             "status",
             "dry_run",
@@ -271,6 +272,19 @@ class AllocationSnapshotEnvelopeTests(unittest.TestCase):
         envelope = result["snapshot_envelope"]
         self.assertTrue(envelope["data_is_real"])
         self.assertEqual(envelope["data_is_real_reasons"], [])
+        self.assertIs(envelope["public_safe"], True)
+
+    def test_public_safe_true_even_when_data_is_real_false(self):
+        # public_safe is a static dashboard marker, NOT a realness claim: it must
+        # stay True while data_is_real fails closed to False on a fake/missing input.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self._run_with_inputs(
+                Path(tmpdir), regime_payload=None, missing_regime=True
+            )
+        envelope = result["snapshot_envelope"]
+        self.assertFalse(envelope["data_is_real"])
+        self.assertTrue(envelope["data_is_real_reasons"])
+        self.assertIs(envelope["public_safe"], True)
 
     def test_fresh_until_is_parseable_and_after_produced_at(self):
         with tempfile.TemporaryDirectory() as tmpdir:
