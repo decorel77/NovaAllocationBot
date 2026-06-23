@@ -2,7 +2,7 @@
 
 Repo: `Apps/NovaAllocationBot`
 Module: `quality_metrics/advisory_quality_scorer.py` (pure, stdlib-only, advisory/recommendation only)
-Status: **tests + docs only.** This note documents what the synthetic hardening loop covered and the malformed-input gaps that remain for a separate, *reviewed* hardening card. No scorer source was changed in this loop; no runtime `allocation_history.json` was read.
+Status: **malformed-type hardening applied (2026-06-23).** The malformed-*type* gaps previously pinned as `assertRaises` markers are now **fixed in the scorer source** — they fail closed / degrade safely instead of raising. The change is pure stdlib only (no new imports), keeps every well-formed result unchanged, and re-runs green against the no-live-import guard. No runtime `allocation_history.json` was read.
 
 ## 1. What the scorer guarantees today
 
@@ -26,25 +26,29 @@ Status: **tests + docs only.** This note documents what the synthetic hardening 
 | Determinism | identical inputs ⇒ identical output |
 | Turnover edges | `< 2` snapshots ⇒ `None`; strict `>` threshold; missing `weights` key ⇒ `{}` (no crash); identical weights ⇒ no turnover |
 
-## 3. KNOWN GAPS — malformed *types* currently raise instead of failing closed
+## 3. Malformed *types* now fail closed (FIXED 2026-06-23)
 
-These are pinned with `assertRaises` in `ScorerKnownGapTest` so a future fix is detected. They are **not** fixed here (this loop is tests/docs only; the fix is a code change that warrants its own reviewed card):
+These were previously pinned with `assertRaises` as known gaps. The scorer now degrades safely instead of raising. `tests/test_advisory_quality_scorer_hardening.py::ScorerMalformedTypeTest` pins the new behavior.
 
-| Malformed input | Current behavior | Desired (future card) |
+| Malformed input | Old behavior | New (fail-closed) behavior |
 |---|---|---|
-| Non-dict top-level `outcome` (str/int) | `ValueError`/`TypeError` at `dict(outcome or {})` | fail closed to UNKNOWN |
-| `freshness` is a string (not a dict) | `AttributeError` at `(o.get("freshness") or {}).get(...)` | treat as MISSING ⇒ fail closed |
-| `forward_returns` is a string (not a dict) | `AttributeError` at `fr.get("20d")` | treat as missing forward return |
-| `turnover_warning` snapshot or `weights` is not a dict | `AttributeError` | treat as `{}` / skip ⇒ no crash |
+| Non-dict top-level `outcome` (str/int/list/float) | `ValueError`/`TypeError` at `dict(outcome or {})` | coerced to `{}` ⇒ UNKNOWN/null scores + `MALFORMED_INPUT` reason code (no crash) |
+| Non-`None` `outcome` vs `None` | — | `None` is the legitimate "absent" signal ⇒ behaves like `{}`, **not** flagged `MALFORMED_INPUT` |
+| `freshness` is a string (not a dict) | `AttributeError` at `(o.get("freshness") or {}).get(...)` | untrusted ⇒ `fail_closed=True`, `stale_data_penalty=1.0`, null scores + `MALFORMED_INPUT` |
+| `forward_returns` is a string (not a dict) | `AttributeError` at `fr.get("20d")` | treated as missing forward return ⇒ null `quality_score` + `MISSING_FORWARD_RETURN` + `MALFORMED_INPUT` |
+| `turnover_warning` snapshot is not a dict | `AttributeError` | coerced to `{}` ⇒ no crash |
+| `turnover_warning` `weights` is not a dict | `AttributeError` | coerced to `{}` ⇒ no crash |
+| `turnover_warning` weight value is non-numeric | `TypeError` at subtraction | coerced to `0.0` ⇒ no crash |
 
-### Suggested fix shape (for the future reviewed card)
+### How it was fixed (pure stdlib, no new imports)
 
-- coerce a non-dict top-level input to `{}` (mirror the existing `dict(outcome or {})` intent but guard non-mapping types);
-- read nested fields defensively: `fresh = o.get("freshness"); status = fresh.get("status") if isinstance(fresh, dict) else None` (same for `forward_returns`);
-- in `turnover_warning`, skip non-dict snapshots and coerce non-dict `weights` to `{}`.
+- top-level: `isinstance(outcome, dict)` guard — a non-`None`, non-mapping input becomes `{}` and appends `MALFORMED_INPUT`;
+- nested fields read defensively: `freshness`/`forward_returns` are only `.get()`-ed when `isinstance(..., dict)`, else treated as untrusted/missing and flagged;
+- a present-but-non-dict `freshness` is treated as *unverifiable freshness* and **fails closed** (safer than assuming fresh);
+- `turnover_warning` coerces non-dict snapshots/`weights` via `_as_dict(...)` and non-numeric weights via `_num(...)`.
 
-Each would only make the scorer **more** fail-closed; none changes a well-formed result. The fix belongs in `quality_metrics/advisory_quality_scorer.py` and must keep the module pure (no new imports) and re-run the no-live-import guard.
+Every change only makes the scorer **more** fail-closed; no well-formed result changed (verified by the unchanged fixture/contract/scorer suites). The module stays pure (only `dataclasses`/`typing`) and the no-live-import guard re-runs green.
 
 ## 4. Out of scope (unchanged here)
 
-No runtime `allocation_history.json` read/write, no downstream export/wiring, no allocation/broker/live import, no package install, no scorer source change. Reading real allocation history or wiring any export remains HUMAN_GATED.
+No runtime `allocation_history.json` read/write, no downstream export/wiring, no allocation/broker/live import, no package install. Reading real allocation history or wiring any export remains HUMAN_GATED.

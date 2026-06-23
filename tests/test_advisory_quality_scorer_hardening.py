@@ -2,9 +2,11 @@
 
 Extends ``tests/test_advisory_quality_scorer.py`` (which is fixture-driven) with
 direct-input hardening: safe degradation, scoring boundaries, JSON
-serializability, determinism, turnover edges, and a pinned record of the
-*known* malformed-type gaps. **Tests + docs only — the scorer source is not
-changed in this loop.**
+serializability, determinism, turnover edges, and the malformed-*type* fail-closed
+behavior. The previously-documented malformed-type gaps are now **fixed** in the
+scorer source (this loop): a non-dict top-level input, a non-dict
+``freshness``/``forward_returns``, or a non-dict snapshot/``weights`` no longer
+raises — it degrades to UNKNOWN / withheld values, never a fabricated number.
 
 What it pins
 ------------
@@ -13,14 +15,14 @@ What it pins
 * scoring boundaries: zero forward return scores 0.0; an unknown decision yields
   a null score + ``UNKNOWN_DECISION``; scores round to 4 dp;
 * an ``OutcomeScore`` is JSON-serializable via ``dataclasses.asdict``;
-* identical inputs ⇒ identical output (determinism);
+* identical inputs ⇒ identical output (determinism), incl. malformed inputs;
 * ``turnover_warning`` edges: < 2 snapshots ⇒ None; strict ``>`` threshold;
   a missing ``weights`` key degrades to ``{}`` rather than crashing;
-* KNOWN GAPS (documented, see ``docs/ADVISORY_QUALITY_SCORER_HARDENING_NOTES.md``):
-  non-dict top-level input and non-dict ``freshness``/``forward_returns``/
-  ``weights`` currently raise instead of failing closed. These are pinned with
-  ``assertRaises`` so a future (reviewed) hardening card that makes them
-  fail-closed will trip these markers and consciously update them.
+* MALFORMED TYPES NOW FAIL CLOSED (see
+  ``docs/ADVISORY_QUALITY_SCORER_HARDENING_NOTES.md``): a non-dict top-level
+  input and a non-dict ``freshness``/``forward_returns``/snapshot/``weights``
+  degrade safely (``MALFORMED_INPUT`` reason code; freshness fails closed) and
+  never raise.
 
 Hermeticity: imports the stdlib (``dataclasses``, ``json``, ``unittest``) and the
 pure module. No allocation/broker import, no runtime read
@@ -34,6 +36,7 @@ import unittest
 from dataclasses import asdict
 
 from quality_metrics.advisory_quality_scorer import (
+    REASON_MALFORMED_INPUT,
     REASON_MISSING_CONFIDENCE,
     REASON_MISSING_FORWARD_RETURN,
     REASON_MISSING_REGIME,
@@ -147,35 +150,67 @@ class TurnoverEdgeTest(unittest.TestCase):
         self.assertTrue(turnover_warning([{}, {"weights": {"A": 1.0}}], 0.5))
 
 
-class ScorerKnownGapTest(unittest.TestCase):
-    """Pins KNOWN malformed-type gaps (raise instead of fail-closed).
+class ScorerMalformedTypeTest(unittest.TestCase):
+    """Malformed *types* now fail closed instead of raising (ALLOC-003D fix).
 
-    Documented in ``docs/ADVISORY_QUALITY_SCORER_HARDENING_NOTES.md`` as a future,
-    *reviewed* hardening card (code change out of scope for this tests/docs loop).
-    A future fix that makes these fail closed will trip these markers and must
-    consciously update them.
+    Documented in ``docs/ADVISORY_QUALITY_SCORER_HARDENING_NOTES.md``. A non-dict
+    top-level input and a non-dict ``freshness``/``forward_returns``/snapshot/
+    ``weights`` degrade safely (``MALFORMED_INPUT`` reason; freshness fails
+    closed) and never raise. None of these change a well-formed result — they
+    only make the scorer *more* fail-closed.
     """
 
-    def test_non_dict_top_level_input_currently_raises(self) -> None:
-        with self.assertRaises((ValueError, TypeError)):
-            score_outcome("not-a-dict")
-        with self.assertRaises((ValueError, TypeError)):
-            score_outcome(5)
+    def test_non_dict_top_level_input_degrades_to_unknown(self) -> None:
+        for bad in ("not-a-dict", 5, ["a"], 3.14):
+            r = score_outcome(bad)  # must not raise
+            self.assertIsInstance(r, OutcomeScore)
+            self.assertIsNone(r.quality_score)
+            self.assertEqual(r.calibration_bucket, "UNKNOWN")
+            self.assertEqual(r.confidence_alignment, "UNKNOWN")
+            self.assertIn(REASON_MALFORMED_INPUT, r.reason_codes)
 
-    def test_non_dict_freshness_currently_raises(self) -> None:
-        with self.assertRaises(AttributeError):
-            score_outcome({"freshness": "STALE"})
+    def test_none_top_level_is_not_flagged_malformed(self) -> None:
+        # ``None`` is a legitimate "absent" signal, not malformed garbage.
+        self.assertNotIn(REASON_MALFORMED_INPUT, score_outcome(None).reason_codes)
+        self.assertEqual(score_outcome(None), score_outcome({}))
 
-    def test_non_dict_forward_returns_currently_raises(self) -> None:
-        with self.assertRaises(AttributeError):
-            score_outcome({"freshness": {"status": "FRESH"}, "forward_returns": "nope",
-                           "decision": "ACCEPTED"})
+    def test_non_dict_freshness_fails_closed(self) -> None:
+        r = score_outcome({"freshness": "STALE"})  # string, not a dict -> untrusted
+        self.assertTrue(r.fail_closed)
+        self.assertEqual(r.stale_data_penalty, 1.0)
+        self.assertIsNone(r.quality_score)
+        self.assertIsNone(r.risk_adjusted_score)
+        self.assertIn(REASON_MALFORMED_INPUT, r.reason_codes)
 
-    def test_non_dict_snapshot_or_weights_currently_raises(self) -> None:
-        with self.assertRaises(AttributeError):
-            turnover_warning(["a", "b"], 0.1)
-        with self.assertRaises(AttributeError):
-            turnover_warning([{"weights": ["x"]}, {"weights": {"A": 1.0}}], 0.1)
+    def test_non_dict_forward_returns_is_missing_forward_return(self) -> None:
+        r = score_outcome({"freshness": {"status": "FRESH"}, "forward_returns": "nope",
+                           "decision": "ACCEPTED"})  # must not raise
+        self.assertFalse(r.fail_closed)
+        self.assertIsNone(r.quality_score)
+        self.assertIn(REASON_MISSING_FORWARD_RETURN, r.reason_codes)
+        self.assertIn(REASON_MALFORMED_INPUT, r.reason_codes)
+
+    def test_non_dict_snapshot_degrades_without_crashing(self) -> None:
+        # both snapshots coerce to {} -> no weights -> zero turnover -> not > 0.1
+        self.assertFalse(turnover_warning(["a", "b"], 0.1))
+
+    def test_non_dict_weights_degrades_without_crashing(self) -> None:
+        # malformed prior weights ([...]) coerce to {}; current {"A": 1.0}
+        self.assertTrue(turnover_warning([{"weights": ["x"]}, {"weights": {"A": 1.0}}], 0.1))
+
+    def test_non_numeric_weight_value_degrades_to_zero(self) -> None:
+        # a string weight is coerced to 0.0 rather than crashing the subtraction
+        snaps = [{"weights": {"A": "oops"}}, {"weights": {"A": 1.0}}]
+        self.assertTrue(turnover_warning(snaps, 0.5))
+
+    def test_malformed_inputs_are_json_serializable_and_deterministic(self) -> None:
+        for bad in ("not-a-dict", {"freshness": "STALE"},
+                    {"freshness": {"status": "FRESH"}, "forward_returns": "nope",
+                     "decision": "ACCEPTED"}):
+            r1 = score_outcome(bad)
+            r2 = score_outcome(bad)
+            self.assertEqual(r1, r2)                       # deterministic
+            json.dumps(asdict(r1))                         # JSON-serializable (no raise)
 
 
 if __name__ == "__main__":
