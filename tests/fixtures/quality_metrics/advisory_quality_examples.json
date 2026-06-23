@@ -1,0 +1,79 @@
+{
+  "schema": "advisory_quality_examples.v1",
+  "task": "ALLOC-003A/B",
+  "synthetic": true,
+  "data_is_real": false,
+  "recommendation_only": true,
+  "note": "SYNTHETIC / MOCK fixtures only. No real account/balance/position data, no order IDs, no broker ids, no secrets. Records mirror docs/contracts/advisory_quality_metrics_contract.md (metric families, enums, fail-closed states). Advisory/reporting only; this fixture grants no authority.",
+  "signal_outcomes": [
+    {
+      "source": "NOVABOTV2",
+      "signal_id": "S-1",
+      "decision": "ACCEPTED",
+      "reason_code": "MOM_BREAKOUT",
+      "forward_returns": {"1d": 0.012, "5d": 0.03, "20d": 0.05},
+      "drawdown_after_pct": -0.02,
+      "missed_opportunity": false,
+      "risk_adjusted_score": 1.5,
+      "freshness": {"status": "FRESH"},
+      "synthetic": true,
+      "case_note": "accepted, profitable, scored OK"
+    },
+    {
+      "source": "NOVABOTV2",
+      "signal_id": "S-2",
+      "decision": "REJECTED",
+      "reason_code": "RG_REJECT_QUOTE_DEVIATION",
+      "forward_returns": {"1d": 0.04, "5d": 0.06, "20d": 0.08},
+      "drawdown_after_pct": -0.01,
+      "missed_opportunity": true,
+      "risk_adjusted_score": null,
+      "freshness": {"status": "FRESH"},
+      "synthetic": true,
+      "case_note": "rejected but would have been profitable -> missed_opportunity"
+    },
+    {
+      "source": "OPTIONS",
+      "signal_id": "S-3",
+      "decision": "ACCEPTED",
+      "reason_code": "IV_RANK",
+      "forward_returns": {"1d": null, "5d": null, "20d": null},
+      "drawdown_after_pct": null,
+      "missed_opportunity": false,
+      "risk_adjusted_score": null,
+      "freshness": {"status": "STALE"},
+      "synthetic": true,
+      "case_note": "stale inputs -> all outcome metrics withheld (UNKNOWN), never fabricated"
+    },
+    {
+      "source": "ALLOCATION",
+      "signal_id": "S-4",
+      "decision": "SKIPPED",
+      "reason_code": "BELOW_THRESHOLD",
+      "forward_returns": {"1d": -0.005, "5d": 0.0, "20d": 0.01},
+      "drawdown_after_pct": -0.03,
+      "missed_opportunity": false,
+      "risk_adjusted_score": 0.2,
+      "freshness": {"status": "FRESH"},
+      "synthetic": true,
+      "case_note": "skipped, weak forward outcome, not a missed opportunity"
+    }
+  ],
+  "allocation_recommendation_snapshots": [
+    {"snapshot_id": "R-0", "recorded_at": "2026-06-22T00:00:00Z", "weights": {"SYNA": 0.5, "SYNB": 0.3, "SYND": 0.2}, "synthetic": true},
+    {"snapshot_id": "R-1", "recorded_at": "2026-06-23T00:00:00Z", "weights": {"SYNA": 0.4, "SYNB": 0.4, "SYND": 0.2}, "synthetic": true}
+  ],
+  "aggregate": {
+    "total": 4,
+    "signals_accepted": 2,
+    "signals_rejected": 1,
+    "signals_skipped": 1,
+    "acceptance_rate": 0.5,
+    "turnover": 0.2,
+    "stability": {"status": "OK", "churn": 0.2},
+    "calibration": {"status": "UNKNOWN"},
+    "recommendation_quality": {"status": "UNKNOWN"},
+    "staleness": {"fresh": 3, "stale": 1, "fresh_share": 0.75, "status": "OK"},
+    "recommendation_only": true
+  }
+}
