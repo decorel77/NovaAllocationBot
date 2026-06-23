@@ -1,0 +1,155 @@
+"""Pure, broker-free advisory quality scorer (recommendation / reporting only).
+
+Task: ALLOC-003D (gated on ALLOC-003A/B/C, all DONE). A deterministic,
+stdlib-only implementation of the advisory quality-metrics contract
+(``docs/contracts/advisory_quality_metrics_contract.md``). It turns one synthetic
+signal-outcome record into per-outcome quality metrics, and a stream of synthetic
+recommendation snapshots into a turnover warning — **failing closed** to
+``UNKNOWN`` / withheld values when an input is missing or stale. It is advisory /
+reporting only: it sizes nothing, moves no money, and changes no allocation.
+
+Inputs (synthetic, caller-supplied)
+-----------------------------------
+A signal-outcome record shaped like the ALLOC-003A/B fixtures
+(``advisory_quality_examples.json`` / ``advisory_quality_cases.json``). The
+003A records carry the minimal fields; the 003B records add ``confidence`` /
+``predicted_good`` / ``realized_good`` / ``signal_regime`` / ``evaluation_regime``
+/ ``regime_mismatch``. Missing optional fields degrade the dependent metric to
+``UNKNOWN`` — never a fabricated number.
+
+Outputs (``OutcomeScore``)
+--------------------------
+``fail_closed``, ``reason_codes``, ``quality_score``, ``risk_adjusted_score``,
+``calibration_bucket``, ``confidence_alignment``, ``stale_data_penalty``,
+``missed_opportunity_flag``, ``regime_mismatch_flag``. Plus a module-level
+``turnover_warning(snapshots, threshold)``.
+
+Safety / hermeticity
+--------------------
+Imports only the stdlib (``dataclasses``, ``typing``). No allocation/broker/live
+import, no numpy/pandas, no network, no file I/O, no runtime read (never reads
+``allocation_history.json``). Deterministic: identical inputs ⇒ identical output.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Optional, Sequence, Tuple
+
+# Reason codes (machine-stable).
+REASON_STALE_INPUT = "STALE_INPUT"
+REASON_MISSING_INPUT = "MISSING_INPUT"
+REASON_MISSING_FORWARD_RETURN = "MISSING_FORWARD_RETURN"
+REASON_UNKNOWN_DECISION = "UNKNOWN_DECISION"
+REASON_MISSING_CONFIDENCE = "MISSING_CONFIDENCE"
+REASON_MISSING_REGIME = "MISSING_REGIME"
+
+_ACCEPTED = "ACCEPTED"
+_NON_ACTED = {"REJECTED", "SKIPPED"}
+_SCORE_DP = 4
+
+
+@dataclass(frozen=True)
+class OutcomeScore:
+    fail_closed: bool
+    reason_codes: Tuple[str, ...]
+    quality_score: Optional[float]
+    risk_adjusted_score: Optional[float]
+    calibration_bucket: str
+    confidence_alignment: str
+    stale_data_penalty: float
+    missed_opportunity_flag: bool
+    regime_mismatch_flag: Optional[bool]
+
+
+def _dedup(seq: Sequence[str]) -> Tuple[str, ...]:
+    out: List[str] = []
+    for s in seq:
+        if s not in out:
+            out.append(s)
+    return tuple(out)
+
+
+def score_outcome(outcome: dict) -> OutcomeScore:
+    """Score one synthetic signal-outcome record (recommendation-only)."""
+    o = dict(outcome or {})
+    reasons: List[str] = []
+
+    freshness = (o.get("freshness") or {}).get("status")
+    fail_closed = freshness in ("STALE", "MISSING")
+    stale_penalty = 1.0 if fail_closed else 0.0
+    if freshness == "STALE":
+        reasons.append(REASON_STALE_INPUT)
+    elif freshness == "MISSING":
+        reasons.append(REASON_MISSING_INPUT)
+
+    fr = o.get("forward_returns") or {}
+    fr20 = fr.get("20d")
+    decision = o.get("decision")
+
+    quality_score: Optional[float]
+    if fail_closed:
+        quality_score = None
+    elif fr20 is None:
+        quality_score = None
+        reasons.append(REASON_MISSING_FORWARD_RETURN)
+    elif decision == _ACCEPTED:
+        quality_score = round(fr20 * 100, _SCORE_DP)          # acting well when forward positive
+    elif decision in _NON_ACTED:
+        quality_score = round(-fr20 * 100, _SCORE_DP)         # rejecting a loser scores positive
+    else:
+        quality_score = None
+        reasons.append(REASON_UNKNOWN_DECISION)
+
+    risk_adjusted_score = None if fail_closed else o.get("risk_adjusted_score")
+
+    confidence = o.get("confidence")
+    realized_good = o.get("realized_good")
+    confidence_known = (not fail_closed) and confidence is not None and realized_good is not None
+    if confidence is None and not fail_closed:
+        reasons.append(REASON_MISSING_CONFIDENCE)
+
+    if not confidence_known:
+        calibration_bucket = "UNKNOWN"
+        confidence_alignment = "UNKNOWN"
+    elif confidence == "HIGH":
+        calibration_bucket = "WELL_CALIBRATED" if realized_good else "OVERCONFIDENT"
+        confidence_alignment = "ALIGNED" if realized_good else "MISALIGNED"
+    elif confidence == "LOW":
+        calibration_bucket = "UNDERCONFIDENT" if realized_good else "WELL_CALIBRATED"
+        confidence_alignment = "ALIGNED" if not realized_good else "MISALIGNED"
+    else:  # MEDIUM / other
+        calibration_bucket = "NEUTRAL"
+        confidence_alignment = "NEUTRAL"
+
+    if "regime_mismatch" in o:
+        regime_mismatch_flag: Optional[bool] = bool(o["regime_mismatch"])
+    elif o.get("signal_regime") is not None and o.get("evaluation_regime") is not None:
+        regime_mismatch_flag = o["signal_regime"] != o["evaluation_regime"]
+    else:
+        regime_mismatch_flag = None
+        reasons.append(REASON_MISSING_REGIME)
+
+    missed_opportunity_flag = bool(o.get("missed_opportunity", False))
+
+    return OutcomeScore(
+        fail_closed=fail_closed,
+        reason_codes=_dedup(reasons),
+        quality_score=quality_score,
+        risk_adjusted_score=risk_adjusted_score,
+        calibration_bucket=calibration_bucket,
+        confidence_alignment=confidence_alignment,
+        stale_data_penalty=stale_penalty,
+        missed_opportunity_flag=missed_opportunity_flag,
+        regime_mismatch_flag=regime_mismatch_flag,
+    )
+
+
+def turnover_warning(snapshots: Sequence[dict], threshold: float) -> Optional[bool]:
+    """Stream-level turnover warning. < 2 snapshots ⇒ None (fail closed)."""
+    snaps = list(snapshots or [])
+    if len(snaps) < 2:
+        return None
+    w0, w1 = snaps[-2].get("weights", {}), snaps[-1].get("weights", {})
+    names = set(w0) | set(w1)
+    t = sum(abs(w1.get(n, 0.0) - w0.get(n, 0.0)) for n in names)
+    return t > threshold
