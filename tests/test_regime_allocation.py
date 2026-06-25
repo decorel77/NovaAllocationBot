@@ -180,6 +180,51 @@ class TestRegimeAdapter(unittest.TestCase):
         self.assertIn("regime_timestamp_future", result.warnings)
 
 
+class TestRegimeAdapterMalformedConfidence(unittest.TestCase):
+    """A malformed-but-parseable confidence must fail closed to 0, never crash.
+
+    ``json.loads`` parses bare ``NaN`` / ``Infinity`` by default, and the adapter
+    used to cast confidence with a raw ``int(...)``, so a corrupt regime snapshot
+    crashed :func:`read_market_regime_snapshot` with ``ValueError`` /
+    ``OverflowError``. It must now degrade confidence to 0 while keeping a valid
+    regime usable.
+    """
+
+    def _read(self, confidence):
+        with tempfile.TemporaryDirectory() as d:
+            p = _write_snapshot(Path(d), {"market_regime": "BULL", "confidence": confidence})
+            return read_market_regime_snapshot(p)
+
+    def test_nan_confidence_fails_closed_to_zero(self):
+        result = self._read(float("nan"))
+        self.assertEqual(result.confidence, 0)
+        self.assertFalse(result.is_fallback)
+        self.assertEqual(result.market_regime, "BULL")
+
+    def test_positive_infinity_confidence_fails_closed_to_zero(self):
+        result = self._read(float("inf"))
+        self.assertEqual(result.confidence, 0)
+        self.assertFalse(result.is_fallback)
+
+    def test_negative_infinity_confidence_fails_closed_to_zero(self):
+        self.assertEqual(self._read(float("-inf")).confidence, 0)
+
+    def test_bool_confidence_is_not_treated_as_number(self):
+        # True is an int subclass; it must not become confidence 1.
+        self.assertEqual(self._read(True).confidence, 0)
+
+    def test_string_confidence_fails_closed_to_zero(self):
+        self.assertEqual(self._read("80").confidence, 0)
+
+    def test_negative_confidence_clamped_to_zero(self):
+        self.assertEqual(self._read(-5).confidence, 0)
+
+    def test_valid_float_confidence_truncates(self):
+        result = self._read(80.9)
+        self.assertEqual(result.confidence, 80)
+        self.assertFalse(result.is_fallback)
+
+
 class TestRegimeAllocationEngine(unittest.TestCase):
     def _allocation_for(self, regime: str, confidence: int = 80) -> dict:
         from core.market_regime_adapter import RegimeReadResult

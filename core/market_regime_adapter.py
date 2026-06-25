@@ -7,6 +7,7 @@ project. Falls back safely on missing file, corrupt JSON, or missing fields.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -80,8 +81,7 @@ def read_market_regime_snapshot(
             raw=payload,
         )
 
-    confidence_raw = payload.get("confidence")
-    confidence = int(confidence_raw) if isinstance(confidence_raw, (int, float)) else 0
+    confidence = _safe_confidence(payload.get("confidence"))
 
     # REPAIR-007: only a snapshot stamped data_is_real=true (REPAIR-005 contract)
     # may be treated as a verified-real regime. A fixture/unverified regime is
@@ -157,6 +157,23 @@ def _freshness_warnings(
         warnings.append("regime_stale")
 
     return tuple(dict.fromkeys(warnings)), "regime_stale" not in warnings
+
+
+def _safe_confidence(value: Any) -> int:
+    """Coerce a snapshot ``confidence`` field to a finite, non-negative int.
+
+    Fail-closed to 0 on malformed input. ``json.loads`` parses bare ``NaN`` /
+    ``Infinity`` / ``-Infinity`` by default, and ``int(nan)`` / ``int(inf)``
+    raise ``ValueError`` / ``OverflowError`` -- so a corrupt upstream regime
+    snapshot must never reach a raw ``int(...)`` cast. A bool (an ``int``
+    subclass), a non-finite float, or a non-numeric value is treated as
+    malformed and degrades to 0 rather than crashing or inflating confidence.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    if isinstance(value, float) and not math.isfinite(value):
+        return 0
+    return max(int(value), 0)
 
 
 def _timestamp_string(payload: dict[str, Any], key: str) -> str | None:
