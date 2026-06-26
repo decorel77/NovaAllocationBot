@@ -17,6 +17,7 @@ ADVISORY_ONLY. Read-only. No broker, orders, money movement, or downstream expor
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from config.allocation_config import ALLOCATION_CONTRACT_VERSION, REGIME_MIN_CONFIDENCE
@@ -45,9 +46,17 @@ def _to_canonical_scheme(allocation: dict[str, Any]) -> dict[str, int]:
     """
     def _num(v: Any) -> float:
         try:
-            return float(v)
+            result = float(v)
         except (TypeError, ValueError):
             return 0.0
+        # A non-finite bucket (NaN/+-Infinity, e.g. from a json.loads payload that
+        # parses bare ``Infinity``) must not reach the ``int(round(...))`` cast
+        # below, where it would raise OverflowError/ValueError and crash the whole
+        # authoritative allocation. Fail closed: a non-finite bucket contributes 0
+        # exposure and the drift correction folds the remainder onto Cash.
+        if not math.isfinite(result):
+            return 0.0
+        return result
 
     nbv2 = _num(allocation.get("NovaBotV2"))
     nopt = _num(allocation.get("NovaBotV2Options"))

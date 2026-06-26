@@ -9,6 +9,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -178,6 +179,55 @@ class AuthoritativeAllocationTests(unittest.TestCase):
                          "money_movement_enabled", "live_trading_enabled",
                          "allocation_export_enabled", "writes_to_other_projects_enabled"):
                 self.assertFalse(out[flag])
+
+
+class NonFiniteAllocationFailClosedTests(unittest.TestCase):
+    """A non-finite allocation bucket (NaN/+-Infinity, reachable via json.loads of
+    an approved-source payload) must not crash the canonical-scheme conversion."""
+
+    def test_inf_bucket_does_not_crash(self):
+        out = build_authoritative_allocation(
+            recommendation={"recommended_allocation": {"NovaBotV2": float("inf"),
+                                                       "NovaBotV2Options": 20, "Cash": 0}},
+            regime_result=RegimeReadResult(
+                market_regime="BULL", confidence=80, input_source="MarketRegimeBot",
+                reason="UNVERIFIED", is_fallback=False, data_is_real=False,
+                warnings=("regime_unverified",),
+            ),
+            regime_allocation={"NovaBotV2": 50, "NovaBotV2Options": 0, "Cash": 50},
+        )
+        # inf bucket folds to 0 exposure; remainder (here 80) lands on Cash via drift.
+        self.assertEqual(sum(out["allocation"].values()), 100)
+        for v in out["allocation"].values():
+            self.assertTrue(math.isfinite(v))
+
+    def test_nan_and_neg_inf_buckets_fail_closed(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=RegimeReadResult(
+                market_regime="SIDEWAYS", confidence=71, input_source="MarketRegimeBot",
+                reason="real", is_fallback=False, data_is_real=True,
+            ),
+            regime_allocation={"NovaBotV2": float("nan"), "NovaBotV2Options": float("-inf"),
+                               "Cash": 30},
+        )
+        self.assertEqual(out["source"], "regime_aware")
+        self.assertEqual(sum(out["allocation"].values()), 100)
+        # both non-finite buckets contributed 0; Cash absorbs the rest.
+        self.assertEqual(out["allocation"]["NovaBotV2"], 0)
+        self.assertEqual(out["allocation"]["NovaBotV2Options"], 0)
+        self.assertEqual(out["allocation"]["Cash"], 100)
+
+    def test_finite_values_unchanged(self):
+        out = build_authoritative_allocation(
+            recommendation=_RECOMMENDATION,
+            regime_result=RegimeReadResult(
+                market_regime="SIDEWAYS", confidence=71, input_source="MarketRegimeBot",
+                reason="real", is_fallback=False, data_is_real=True,
+            ),
+            regime_allocation={"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25},
+        )
+        self.assertEqual(out["allocation"], {"NovaBotV2": 70, "NovaBotV2Options": 5, "Cash": 25})
 
 
 class CycleAuthoritativeTests(unittest.TestCase):
