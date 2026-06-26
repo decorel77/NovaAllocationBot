@@ -1,6 +1,11 @@
-﻿import unittest
+﻿import math
+import unittest
 
-from core.recommendation_engine import CURRENT_ALLOCATION, generate_allocation_recommendation
+from core.recommendation_engine import (
+    CURRENT_ALLOCATION,
+    _safe_score,
+    generate_allocation_recommendation,
+)
 
 
 class RecommendationEngineTests(unittest.TestCase):
@@ -149,6 +154,34 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(recommendation.recommended_allocation["NovaBotV2"], 90)
         self.assertEqual(recommendation.recommended_allocation["NovaBotV2Options"], 10)
         self.assertEqual(sum(recommendation.recommended_allocation.values()), 100)
+
+
+class NonFiniteScoreFailClosedTests(unittest.TestCase):
+    """A non-finite/invalid health score (reachable via json.loads of an upstream
+    health summary) must degrade to a conservative 0, not crash int()."""
+
+    def test_safe_score_non_finite_and_invalid(self):
+        self.assertEqual(_safe_score(float("inf")), 0)
+        self.assertEqual(_safe_score(float("-inf")), 0)
+        self.assertEqual(_safe_score(float("nan")), 0)
+        self.assertEqual(_safe_score("not-a-number"), 0)
+        self.assertEqual(_safe_score(None), 0)
+
+    def test_safe_score_preserves_valid(self):
+        self.assertEqual(_safe_score(80), 80)
+        self.assertEqual(_safe_score("95"), 95)
+        self.assertEqual(_safe_score(72.9), 72)
+
+    def test_inf_score_does_not_crash_recommendation(self):
+        rec = generate_allocation_recommendation(
+            {
+                "NovaBotV2": {"score": float("inf"), "status": "HEALTHY"},
+                "NovaBotV2Options": {"score": float("nan"), "status": "HEALTHY"},
+            }
+        )
+        self.assertEqual(sum(rec.recommended_allocation.values()), 100)
+        for v in rec.recommended_allocation.values():
+            self.assertTrue(math.isfinite(v))
 
 
 if __name__ == "__main__":

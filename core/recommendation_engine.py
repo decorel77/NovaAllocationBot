@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -88,10 +89,27 @@ def generate_allocation_recommendation(
     return recommendation
 
 
+def _safe_score(value: Any) -> int:
+    """Coerce a health score to a finite int.
+
+    A non-finite (NaN/+-Infinity, reachable via json.loads of an upstream health
+    summary) or non-numeric score must never reach a raw ``int(...)`` cast, where
+    it would raise OverflowError/ValueError and crash the recommendation. Fail
+    closed to 0 (the lowest, most conservative score -> no inflated allocation).
+    """
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(score):
+        return 0
+    return int(score)
+
+
 def _health_entry(bot_health: dict[str, dict[str, Any]], bot_name: str) -> dict[str, Any]:
     entry = bot_health.get(bot_name, {})
     return {
-        "score": int(entry.get("score", 0)),
+        "score": _safe_score(entry.get("score", 0)),
         "status": str(entry.get("status", "UNKNOWN")).upper(),
     }
 
