@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from core.allocation_compliance import (
     GLOBAL_COMPLIANT,
     GLOBAL_DRIFT,
     GLOBAL_UNKNOWN,
+    _read_equity_from_snapshot,
     build_allocation_compliance,
 )
 from workflow import allocation_cycle
@@ -218,6 +220,44 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
             )
         ac = result["allocation_compliance"]
         self.assertEqual(ac["global_status"], GLOBAL_DRIFT)
+
+
+class TestNonFiniteEquityFailsClosed(unittest.TestCase):
+    """A non-finite equity (NaN/+-Infinity) must not be read as a valid value nor
+    poison the compliance percentages — it must read as UNKNOWN."""
+
+    def test_snapshot_infinity_equity_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "snap.json"
+            for bad in ("Infinity", "-Infinity", "NaN"):
+                p.write_text('{"equity": %s}' % bad, encoding="utf-8")
+                self.assertIsNone(_read_equity_from_snapshot(p),
+                                  f"{bad} equity should not be read as valid")
+
+    def test_snapshot_finite_equity_still_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "snap.json"
+            p.write_text('{"equity": 1234.5}', encoding="utf-8")
+            self.assertEqual(_read_equity_from_snapshot(p), 1234.5)
+
+    def test_non_finite_current_value_reads_unknown_not_poisoned(self):
+        current = {"NovaBotV2": float("inf"), "NovaBotV2Options": 100.0, "Cash": None}
+        result = build_allocation_compliance(_TARGET_BULL, current_values=current)
+        nbv2 = _bucket(result, "NovaBotV2")
+        # inf bucket is treated as unknown; its percentage stays None (not nan).
+        self.assertEqual(nbv2.status, BUCKET_UNKNOWN)
+        self.assertIsNone(nbv2.current_pct)
+        # the surviving finite bucket is computed against a finite total.
+        opts = _bucket(result, "NovaBotV2Options")
+        self.assertIsNotNone(opts.current_pct)
+        self.assertTrue(math.isfinite(opts.current_pct))
+
+    def test_all_non_finite_current_values_global_unknown(self):
+        current = {"NovaBotV2": float("nan"), "NovaBotV2Options": float("-inf"), "Cash": None}
+        result = build_allocation_compliance(_TARGET_BULL, current_values=current)
+        self.assertEqual(result.global_status, GLOBAL_UNKNOWN)
+        for b in result.buckets:
+            self.assertIsNone(b.current_pct)
 
 
 if __name__ == "__main__":

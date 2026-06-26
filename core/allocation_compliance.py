@@ -8,6 +8,7 @@ no broker calls, no money movement.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -107,7 +108,11 @@ def _read_equity_from_snapshot(path: Path) -> float | None:
         return None
     for key in _EQUITY_FIELD_NAMES:
         value = payload.get(key)
-        if isinstance(value, (int, float)) and value > 0:
+        # A non-finite equity (NaN/+-Infinity, parsed by json.loads from a bot
+        # snapshot) satisfies ``value > 0`` (inf > 0 is True) and would poison the
+        # compliance percentages with nan once divided by the (now-infinite) total.
+        # Reject non-finite so the bucket reads as missing (UNKNOWN) — fail closed.
+        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
             return float(value)
     return None
 
@@ -156,8 +161,18 @@ def build_allocation_compliance(
     if current_values is None:
         current_values = read_current_values(snapshot_map=snapshot_map)
 
+    def _finite_or_none(v: float | None) -> float | None:
+        # A non-finite (NaN/+-Infinity) or non-numeric value passed via the public
+        # ``current_values`` param must not poison the total / per-bucket
+        # percentages — fail closed to None (UNKNOWN) for that bucket.
+        if isinstance(v, (int, float)) and math.isfinite(v):
+            return v
+        return None
+
     # Fill in None for buckets not present in current_values (e.g. Cash).
-    all_current: dict[str, float | None] = {b: current_values.get(b) for b in target_allocation}
+    all_current: dict[str, float | None] = {
+        b: _finite_or_none(current_values.get(b)) for b in target_allocation
+    }
 
     known_values = {b: v for b, v in all_current.items() if v is not None}
     total = sum(known_values.values()) if known_values else None
