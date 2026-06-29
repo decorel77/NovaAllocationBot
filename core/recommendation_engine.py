@@ -106,8 +106,14 @@ def _safe_score(value: Any) -> int:
     return int(score)
 
 
-def _health_entry(bot_health: dict[str, dict[str, Any]], bot_name: str) -> dict[str, Any]:
-    entry = bot_health.get(bot_name, {})
+def _health_entry(bot_health: object, bot_name: str) -> dict[str, Any]:
+    # Fail-closed: a non-dict bot_health, or a non-dict per-bot entry, must hold
+    # the baseline (status UNKNOWN) rather than raising AttributeError. Missing or
+    # malformed data must never increase a risky bucket above baseline.
+    source = bot_health if isinstance(bot_health, dict) else {}
+    entry = source.get(bot_name, {})
+    if not isinstance(entry, dict):
+        entry = {}
     return {
         "score": _safe_score(entry.get("score", 0)),
         "status": str(entry.get("status", "UNKNOWN")).upper(),
