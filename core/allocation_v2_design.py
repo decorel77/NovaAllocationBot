@@ -30,6 +30,7 @@ copied) so the design layer cannot drift from production math.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -83,9 +84,26 @@ class AllocationV2DesignError(ValueError):
     """Raised when a v2 design proposal violates its own safety invariants."""
 
 
+def _whole_pct(value: Any) -> int:
+    """Coerce one bucket percentage to an int, failing closed on malformed input.
+
+    A finite real number (int/bool/float) truncates to int exactly as the old
+    ``int(pct)`` did, so valid allocations are unchanged. A non-finite float
+    (``inf``/``nan``) or a non-numeric value (``str``/``None``/...) raises
+    :class:`AllocationV2DesignError` — the module's own fail-closed signal — instead
+    of leaking a raw ``OverflowError`` / ``ValueError`` / ``TypeError`` to callers
+    (HARDEN-SWEEP-008).
+    """
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise AllocationV2DesignError(f"non-finite/non-numeric bucket percentage: {value!r}")
+    return int(value)
+
+
 def risky_pct(allocation: Mapping[str, Any]) -> int:
     """Risky share of a canonical allocation: everything that is not Cash."""
-    return sum(int(pct) for bucket, pct in allocation.items() if bucket != "Cash")
+    if not isinstance(allocation, Mapping):
+        raise AllocationV2DesignError(f"allocation must be a mapping, got {type(allocation).__name__}")
+    return sum(_whole_pct(pct) for bucket, pct in allocation.items() if bucket != "Cash")
 
 
 @dataclass(frozen=True)
@@ -252,9 +270,11 @@ class AllocationV2Proposal:
             ("proposed", self.proposed_allocation),
             ("baseline", self.baseline_allocation),
         ):
-            if any(int(pct) < 0 for pct in allocation.values()):
+            if not isinstance(allocation, Mapping):
+                raise AllocationV2DesignError(f"{name} allocation must be a mapping.")
+            if any(_whole_pct(pct) < 0 for pct in allocation.values()):
                 raise AllocationV2DesignError(f"Negative bucket in {name} allocation.")
-            if sum(int(pct) for pct in allocation.values()) != 100:
+            if sum(_whole_pct(pct) for pct in allocation.values()) != 100:
                 raise AllocationV2DesignError(f"{name} allocation must total 100.")
         if self.source == "regime_aware_v2_design":
             cap = MAX_RISKY_PCT_BY_REGIME.get(self.effective_regime or "")
