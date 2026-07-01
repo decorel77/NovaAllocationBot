@@ -188,8 +188,10 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
 
     def _verified_bull_regime(self, d: Path) -> Path:
         # REPAIR-007: compliance is measured against the AUTHORITATIVE allocation.
-        # Pin a verified-real BULL regime so the target is a deterministic 90/10/0
-        # rather than the ambient live MarketRegimeBot snapshot.
+        # Pin a verified-real BULL regime so the target is deterministic (regime-
+        # driven, independent of current_values) rather than the ambient live
+        # MarketRegimeBot snapshot. BULL tilts more aggressive than the 90/10
+        # neutral baseline: the authoritative BULL target is 95/5/0.
         p = Path(d) / "regime.json"
         p.write_text(
             json.dumps({"market_regime": "BULL", "confidence": 80,
@@ -199,8 +201,8 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
         return p
 
     def test_cycle_with_synthetic_values_shows_compliant(self):
-        # Inject exact-match values (90/10/0) against the verified BULL target → COMPLIANT
-        current = {"NovaBotV2": 900.0, "NovaBotV2Options": 100.0, "Cash": None}
+        # Inject exact-match values (95/5/0) against the verified BULL target → COMPLIANT
+        current = {"NovaBotV2": 950.0, "NovaBotV2Options": 50.0, "Cash": None}
         with tempfile.TemporaryDirectory() as d:
             result = allocation_cycle.run_allocation_cycle(
                 write_snapshot=False,
@@ -211,7 +213,10 @@ class TestSnapshotContainsCompliance(unittest.TestCase):
         self.assertEqual(ac["global_status"], GLOBAL_COMPLIANT)
 
     def test_cycle_with_drift_shows_drift_warning(self):
-        current = {"NovaBotV2": 970.0, "NovaBotV2Options": 30.0, "Cash": None}
+        # 85/15 drifts -10/+10 from the 95/5 BULL target — beyond the 5% tolerance.
+        # (The old 970/30 was only ~2 points off the real 95/5 target, i.e. actually
+        # COMPLIANT — it silently assumed a stale 90/10 target.)
+        current = {"NovaBotV2": 850.0, "NovaBotV2Options": 150.0, "Cash": None}
         with tempfile.TemporaryDirectory() as d:
             result = allocation_cycle.run_allocation_cycle(
                 write_snapshot=False,
